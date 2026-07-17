@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root,
+.dark {
+  --background: 0 0% 4%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 7%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 8%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 13%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 13%;
+  --muted-foreground: 0 0% 63%;
+  --accent: 0 0% 15%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62% 40%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 16%;
+  --input: 0 0% 16%;
+  --ring: 217 91% 60%;
+  --brand: 217 91% 60%;
+  --brand-foreground: 0 0% 100%;
+  --risk: 4 78% 58%;
+  --risk-foreground: 0 0% 98%;
+  --success: 142 71% 45%;
+  --success-foreground: 0 0% 98%;
+  --radius: 0.75rem;
+}
+
+.light {
+  --background: 0 0% 98%;
+  --foreground: 0 0% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 9%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 95%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 95%;
+  --muted-foreground: 0 0% 40%;
+  --accent: 0 0% 93%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 72% 48%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 89%;
+  --input: 0 0% 89%;
+  --ring: 217 91% 55%;
+  --brand: 217 91% 52%;
+  --brand-foreground: 0 0% 100%;
+  --risk: 4 74% 52%;
+  --risk-foreground: 0 0% 98%;
+  --success: 142 68% 38%;
+  --success-foreground: 0 0% 98%;
+  --radius: 0.75rem;
+}
+
+* {
+  @apply border-border;
+}
+
+html {
+  color-scheme: dark;
+}
+html.light {
+  color-scheme: light;
+}
+/* Compact density — tighten the whole rem-based UI a notch. */
+html.density-compact {
+  font-size: 15px;
+}
+
+body {
+  @apply bg-background text-foreground;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* Faint accent-tinted ambient glow — brand identity, follows the accent color. */
+  background-image: radial-gradient(120% 60% at 100% -10%, hsl(var(--brand) / 0.06), transparent 55%);
+  background-attachment: fixed;
+}
+
+/* Own type scale — tighter tracking + calmer line-height on headings/large text. */
+h1, h2, h3, .text-2xl, .text-xl, .text-lg {
+  letter-spacing: -0.018em;
+}
+h1, .text-2xl { line-height: 1.15; }
+
+/* Tabular figures for numeric-heavy UI (KPIs, timers, counts). */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* Thin, unobtrusive scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* react-grid-layout — theme the drag placeholder & resize handle */
+.react-grid-item.react-grid-placeholder {
+  background: hsl(var(--brand)) !important;
+  opacity: 0.15;
+  border-radius: var(--radius);
+}
+/* Resize handle only renders in "Настроить" mode — make it obvious & easy to grab. */
+.react-grid-item > .react-resizable-handle {
+  width: 22px;
+  height: 22px;
+  z-index: 20;
+}
+.react-grid-item > .react-resizable-handle.react-resizable-handle-se {
+  cursor: se-resize;
+  bottom: 2px;
+  right: 2px;
+}
+.react-grid-item > .react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid hsl(var(--brand));
+  border-bottom: 2px solid hsl(var(--brand));
+  border-bottom-right-radius: 3px;
+  opacity: 0.55;
+  transition: opacity 150ms;
+}
+.react-grid-item > .react-resizable-handle:hover::after {
+  opacity: 1;
+}
+.react-grid-item.react-draggable-dragging,
+.react-grid-item.resizing {
+  z-index: 30;
+}
+

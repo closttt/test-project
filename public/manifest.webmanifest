@@ -1,0 +1,15 @@
+{
+  "name": "Рабочий стол — задачи и клиенты",
+  "short_name": "Рабочий стол",
+  "description": "Личный таск-менеджер и мини-CRM: задачи, клиенты, проекты, заметки, календарь.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "lang": "ru",
+  "icons": [
+    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "maskable" }
+  ]
+}
