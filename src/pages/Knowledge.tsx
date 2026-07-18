@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookMarked, ExternalLink, RefreshCw, Search, List, LayoutGrid, Trash2, X, ImageIcon } from "lucide-react";
+import { BookMarked, ExternalLink, RefreshCw, Search, List, LayoutGrid, Trash2, X, ImageIcon, Link2, FolderTree, CalendarDays } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -22,11 +22,22 @@ import { cn } from "@/lib/utils";
 import { isSupabaseConfigured, fetchKnowledgeCards, deleteKnowledgeCard, updateKnowledgeCardSource } from "@/lib/supabase";
 import { ShimmerSkeleton } from "@/components/unlumen-ui/shimmer-skeleton";
 import { ProgressiveBlur } from "@/components/unlumen-ui/progressive-blur";
+import { extractLinks } from "@/lib/links";
+import {
+  loadCategoryOverrides,
+  setCategoryOverride,
+  resolveCategory,
+  allCategories,
+  groupByCategory,
+  UNSORTED,
+  type CategoryOverrides,
+} from "@/lib/knowledgeCategory";
 import type { KnowledgeCard } from "@/types";
 
 const POLL_MS = 60_000;
 type ViewMode = "cards" | "table";
 type SortMode = "newest" | "oldest" | "title";
+type GroupMode = "date" | "category";
 
 function NotConfigured() {
   return (
@@ -94,12 +105,21 @@ export default function Knowledge() {
   const [loading, setLoading] = useState(configured);
   const [view, setView] = useState<ViewMode>("cards");
   const [sortBy, setSortBy] = useState<SortMode>("newest");
+  const [groupMode, setGroupMode] = useState<GroupMode>("date");
   const [query, setQuery] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [opened, setOpened] = useState<KnowledgeCard | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<KnowledgeCard | null>(null);
   const [sourceDraft, setSourceDraft] = useState("");
   const [savingSource, setSavingSource] = useState(false);
+  // Client-side category ("раздел") overrides per card — one level of hierarchy over flat tags.
+  const [categories, setCategories] = useState<CategoryOverrides>(() => loadCategoryOverrides());
+  const [categoryDraft, setCategoryDraft] = useState("");
+
+  function assignCategory(card: KnowledgeCard, value: string | null) {
+    setCategories((prev) => setCategoryOverride(prev, card.id, value));
+    setCategoryDraft("");
+  }
 
   /** Attach/clear the source link by hand (private-channel fallback). */
   async function saveSource(card: KnowledgeCard, url: string | null) {
@@ -169,6 +189,10 @@ export default function Knowledge() {
   }, [cards, q, activeTag, sortBy]);
 
   const groups = useMemo(() => {
+    // Group by category ("раздел") when chosen, else by day — same {label, items} shape either way.
+    if (groupMode === "category") {
+      return groupByCategory(visible, categories).map((g) => ({ label: g.category, items: g.cards }));
+    }
     const out: { label: string; items: KnowledgeCard[] }[] = [];
     for (const c of visible) {
       const label = dayLabel(c.createdAt);
@@ -177,7 +201,10 @@ export default function Knowledge() {
       else out.push({ label, items: [c] });
     }
     return out;
-  }, [visible]);
+  }, [visible, groupMode, categories]);
+
+  // Existing categories offered as quick picks in the card's category selector.
+  const knownCategories = useMemo(() => allCategories(cards, categories).filter((c) => c !== UNSORTED), [cards, categories]);
 
   function handleDelete(c: KnowledgeCard) {
     setConfirmTarget(c);
@@ -332,15 +359,26 @@ export default function Knowledge() {
                 </div>
               )}
               <Segmented
-                ariaLabel="Сортировка карточек"
-                value={sortBy}
-                onChange={setSortBy}
+                ariaLabel="Группировка карточек"
+                value={groupMode}
+                onChange={setGroupMode}
                 options={[
-                  { value: "newest", label: "Новые" },
-                  { value: "oldest", label: "Старые" },
-                  { value: "title", label: "А-Я" },
+                  { value: "date", label: <CalendarDays className="h-4 w-4" />, title: "По дате" },
+                  { value: "category", label: <FolderTree className="h-4 w-4" />, title: "По разделам" },
                 ]}
               />
+              {groupMode === "date" && (
+                <Segmented
+                  ariaLabel="Сортировка карточек"
+                  value={sortBy}
+                  onChange={setSortBy}
+                  options={[
+                    { value: "newest", label: "Новые" },
+                    { value: "oldest", label: "Старые" },
+                    { value: "title", label: "А-Я" },
+                  ]}
+                />
+              )}
               <Segmented
                 ariaLabel="Вид базы знаний"
                 value={view}
@@ -397,6 +435,33 @@ export default function Knowledge() {
                     <p className="whitespace-pre-wrap">{opened.description}</p>
                   </div>
                 )}
+
+                {/* Every link found in the card text, surfaced as clean domain chips (arbitrary
+                    links, not just the manual source fallback). Full OG/image previews need a
+                    server-side fetch — browsers block cross-origin HTML — so v1 shows them by domain. */}
+                {extractLinks(opened.description).length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Link2 className="h-3.5 w-3.5" /> Ссылки в тексте
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {extractLinks(opened.description).map((l) => (
+                        <a
+                          key={l.url}
+                          href={l.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-brand hover:text-brand"
+                          title={l.url}
+                        >
+                          <Link2 className="h-3 w-3" /> {l.domain}
+                          <ExternalLink className="h-3 w-3 opacity-60" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
                   {opened.tags.map((t) => (
                     <TaskTag key={t} tag={t} />
@@ -405,6 +470,50 @@ export default function Knowledge() {
                     {opened.tags[0] && <span className="rounded-full border border-border px-2 py-0.5">#{opened.tags[0]}</span>}
                     {formatDateTime(opened.createdAt)}
                   </span>
+                </div>
+
+                {/* Раздел (category) — one level of hierarchy over flat tags, stored client-side. */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <FolderTree className="h-3.5 w-3.5" /> Раздел
+                    <span className="ml-1 rounded-full bg-secondary px-2 py-0.5 text-foreground">
+                      {resolveCategory(opened, categories)}
+                    </span>
+                    {categories[opened.id] && (
+                      <button
+                        onClick={() => assignCategory(opened, null)}
+                        className="text-muted-foreground/60 hover:text-foreground"
+                        title="Сбросить к тегу"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {knownCategories
+                      .filter((cat) => cat !== resolveCategory(opened, categories))
+                      .map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => assignCategory(opened, cat)}
+                          className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-muted-foreground/40 hover:text-foreground"
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        value={categoryDraft}
+                        onChange={(e) => setCategoryDraft(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && categoryDraft.trim() && assignCategory(opened, categoryDraft)}
+                        placeholder="новый раздел…"
+                        className="h-8 w-40 text-xs"
+                      />
+                      <Button size="sm" variant="outline" className="h-8" disabled={!categoryDraft.trim()} onClick={() => assignCategory(opened, categoryDraft)}>
+                        Задать
+                      </Button>
+                    </div>
+                  </div>
                 </div>
                 {opened.sourceUrl ? (
                   <div className="flex items-center gap-2">
