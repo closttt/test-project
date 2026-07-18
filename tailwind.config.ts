@@ -63,9 +63,14 @@ export default {
           "0%, 100%": { boxShadow: "0 0 0 0 hsl(var(--risk) / 0.5)" },
           "50%": { boxShadow: "0 0 0 4px hsl(var(--risk) / 0)" },
         },
+        shimmer: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(200%)" },
+        },
       },
       animation: {
         "risk-pulse": "risk-pulse 2s ease-in-out infinite",
+        shimmer: "shimmer 1.6s ease-in-out infinite",
       },
     },
   },

@@ -35,7 +35,7 @@ export function AppLayout() {
   // Global single-key shortcuts + "G then letter" navigation (Linear-style).
   useEffect(() => {
     const GO: Record<string, string> = {
-      d: "/", p: "/projects", t: "/tasks", n: "/notes",
+      d: "/", k: "/clients", p: "/projects", t: "/tasks", n: "/notes",
       c: "/calendar", a: "/achievements", s: "/settings",
       y: "/analytics", r: "/archive",
     };

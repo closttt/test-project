@@ -12,6 +12,7 @@ const badgeVariants = cva(
         secondary: "border-transparent bg-secondary text-secondary-foreground",
         destructive: "border-transparent bg-destructive text-destructive-foreground",
         outline: "text-foreground border-border",
+        // Flat tinted status chips — clean fill + colour, no ring (reference aesthetic).
         success: "border-transparent bg-success/15 text-success",
         risk: "border-transparent bg-risk/15 text-risk",
         warning: "border-transparent bg-amber-500/15 text-amber-400",

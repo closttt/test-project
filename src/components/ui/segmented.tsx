@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
+import { motion } from "framer-motion";
 
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,11 @@ export function Segmented<T extends string>({
   className?: string;
   ariaLabel?: string;
 }) {
+  // Unique per instance — a page can show more than one Segmented at once (e.g. Knowledge's sort
+  // + view switches side by side), and a shared layoutId across unrelated instances would make
+  // the active pill try to animate between them. Matches Sidebar.tsx's own "sidebar-active" pattern.
+  const groupId = useId();
+
   return (
     <div
       role="group"
@@ -44,12 +50,19 @@ export function Segmented<T extends string>({
             title={o.title}
             onClick={() => onChange(o.value)}
             className={cn(
-              "flex items-center gap-1.5 rounded px-2.5 py-1 font-medium transition-colors",
+              "relative flex items-center gap-1.5 rounded px-2.5 py-1 font-medium transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-              active ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"
+              active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
-            {o.label}
+            {active && (
+              <motion.span
+                layoutId={`segmented-active-${groupId}`}
+                className="absolute inset-0 rounded bg-secondary"
+                transition={{ type: "spring", stiffness: 500, damping: 40 }}
+              />
+            )}
+            <span className="relative z-10 flex items-center gap-1.5">{o.label}</span>
           </button>
         );
       })}

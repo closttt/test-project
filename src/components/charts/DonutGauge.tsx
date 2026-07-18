@@ -6,7 +6,11 @@ export interface Segment {
   color: string;
 }
 
-/** Donut chart from segments, with a centre label. Theme-aware via passed colors. */
+/**
+ * Donut chart from segments with a centre label. Per the dataviz mark spec, touching segments are
+ * separated by a small surface-colour gap (not a stroke) so neighbours read distinct; a single
+ * full-circle segment gets no gap. Theme-aware via passed colours.
+ */
 export function DonutGauge({
   segments,
   size = 160,
@@ -24,6 +28,10 @@ export function DonutGauge({
   const total = Math.max(1, segments.reduce((s, x) => s + x.value, 0));
   const r = (size - thickness) / 2;
   const c = 2 * Math.PI * r;
+  // A ~2px surface gap between segments (expressed as arc length). Only applied when more than one
+  // segment actually has a value, so a lone full ring stays unbroken.
+  const drawn = segments.filter((s) => s.value > 0);
+  const gap = drawn.length > 1 ? Math.min(6, c * 0.012) : 0;
   let offset = 0;
 
   return (
@@ -31,7 +39,9 @@ export function DonutGauge({
       <svg width={size} height={size} className="-rotate-90">
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="hsl(var(--secondary))" strokeWidth={thickness} />
         {segments.map((s, i) => {
-          const len = (s.value / total) * c;
+          if (s.value <= 0) return null;
+          const raw = (s.value / total) * c;
+          const len = Math.max(0.5, raw - gap);
           const dash = `${len} ${c - len}`;
           const pct = Math.round((s.value / total) * 100);
           const el = (
@@ -45,19 +55,19 @@ export function DonutGauge({
               strokeWidth={thickness}
               strokeDasharray={dash}
               strokeDashoffset={-offset}
-              strokeLinecap="round"
+              strokeLinecap={gap > 0 ? "round" : "butt"}
               onMouseEnter={(e) => showAt(e.clientX, e.clientY, `${s.label}: ${s.value} (${pct}%)`)}
               onMouseMove={(e) => showAt(e.clientX, e.clientY, `${s.label}: ${s.value} (${pct}%)`)}
               onMouseLeave={hide}
             />
           );
-          offset += len;
+          offset += raw;
           return el;
         })}
       </svg>
       {(centerTop || centerBottom) && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          {centerTop && <span className="text-lg font-semibold tracking-tight">{centerTop}</span>}
+          {centerTop && <span className="text-xl font-semibold tracking-tight">{centerTop}</span>}
           {centerBottom && <span className="text-xs text-muted-foreground">{centerBottom}</span>}
         </div>
       )}

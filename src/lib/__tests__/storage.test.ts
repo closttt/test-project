@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-import { loadData, saveData, migrate } from "@/lib/storage";
+import { loadData, saveData, migrate, createDebouncedSaver } from "@/lib/storage";
 import { seedData } from "@/lib/seed";
 import type { AppData } from "@/types";
 
@@ -94,5 +94,79 @@ describe("migrate — trash auto-purge", () => {
     d.tasks = [{ ...seedData().tasks[0], id: "t1", archivedAt: undefined }];
     const migrated = migrate(d);
     expect(migrated.tasks.find((t) => t.id === "t1")).toBeDefined();
+  });
+});
+
+describe("createDebouncedSaver", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("does not write to localStorage until the delay elapses", () => {
+    const saver = createDebouncedSaver(400);
+    saver.schedule(seedData());
+    expect(loadData()).toBeNull();
+    vi.advanceTimersByTime(399);
+    expect(loadData()).toBeNull();
+    vi.advanceTimersByTime(1);
+    expect(loadData()).not.toBeNull();
+  });
+
+  it("collapses rapid-fire schedule() calls (e.g. a drag-reorder) into a single write of the LATEST value", () => {
+    const saver = createDebouncedSaver(400);
+    const spy = vi.spyOn(Storage.prototype, "setItem"); // calls through to the real implementation
+    for (let i = 0; i < 20; i++) {
+      const d = seedData();
+      d.settings.riskAttentionDays = i; // distinguishing marker for the final value
+      saver.schedule(d);
+      vi.advanceTimersByTime(50); // well under the 400ms delay each time — never lets it fire
+    }
+    expect(spy).not.toHaveBeenCalled(); // every call re-armed the timer, nothing written yet
+    vi.advanceTimersByTime(400);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(loadData()!.settings.riskAttentionDays).toBe(19); // the LAST scheduled value, not the first
+    spy.mockRestore();
+  });
+
+  it("flush() writes immediately, bypassing the delay", () => {
+    const saver = createDebouncedSaver(5000);
+    const d = seedData();
+    saver.schedule(d);
+    expect(loadData()).toBeNull();
+    saver.flush();
+    expect(loadData()).not.toBeNull();
+  });
+
+  it("flush() prevents the still-pending timer from firing a second, redundant write", () => {
+    const saver = createDebouncedSaver(400);
+    const d = seedData();
+    d.settings.riskAttentionDays = 7;
+    saver.schedule(d);
+    saver.flush();
+    // A later schedule()+no-flush should be the only thing the still-running fake timers can fire.
+    const d2 = seedData();
+    d2.settings.riskAttentionDays = 42;
+    saver.schedule(d2);
+    vi.advanceTimersByTime(400);
+    expect(loadData()!.settings.riskAttentionDays).toBe(42); // not overwritten back by a stale timer
+  });
+
+  it("flush() with nothing scheduled is a no-op — does not throw, does not write", () => {
+    const saver = createDebouncedSaver(400);
+    expect(() => saver.flush()).not.toThrow();
+    expect(loadData()).toBeNull();
+    saver.flush(); // calling twice in a row must also be safe
+    expect(loadData()).toBeNull();
+  });
+
+  it("simulates the tab-close scenario: a rapid edit right before close must not be lost", () => {
+    // This is the exact regression AUDIT.md flagged debouncing as risky for — a debounced write
+    // in flight when the tab closes silently drops the user's last edit unless something flushes it.
+    const saver = createDebouncedSaver(400);
+    const edited = seedData();
+    edited.settings.riskAttentionDays = 99;
+    saver.schedule(edited); // e.g. the last frame of a drag, 400ms write still pending…
+    // …tab closes before the timer would have fired — caller MUST flush on pagehide/visibilitychange.
+    saver.flush();
+    expect(loadData()!.settings.riskAttentionDays).toBe(99);
   });
 });

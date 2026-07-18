@@ -25,6 +25,7 @@ import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
 import { cn } from "@/lib/utils";
 import { migrate } from "@/lib/storage";
+import { collectAttachmentIds, exportAttachmentBlobs, importAttachmentBlobs, type AttachmentBlobDump } from "@/lib/attachments";
 import { requestNotifications, notificationsEnabled, notificationPermission } from "@/lib/reminders";
 import { NAV_ITEMS, loadNavOrder, saveNavOrder, loadNavHidden, saveNavHidden, resetNav } from "@/lib/navConfig";
 import { NAV_CHANGED_EVENT } from "@/components/layout/Sidebar";
@@ -249,9 +250,10 @@ export default function SettingsPage() {
     location.reload();
   }
 
-  function exportData() {
+  async function exportData() {
     const payload: AppData = {
       clients: data.clients,
+      students: data.students,
       projects: data.allProjects,
       tasks: data.allTasks,
       notes: data.allNotes,
@@ -261,26 +263,34 @@ export default function SettingsPage() {
       gamification: data.gamification,
       pomodoroSessions: data.pomodoroSessions,
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    // Attachment blobs live in IndexedDB, not AppData — bundle them into the same file so a
+    // restore on another device doesn't come back with every photo/file/cover missing.
+    const attachmentIds = collectAttachmentIds(data.allTasks, data.allProjects);
+    const attachmentBlobs = attachmentIds.length > 0 ? await exportAttachmentBlobs(attachmentIds) : undefined;
+    const full: AppData & { attachmentBlobs?: Record<string, AttachmentBlobDump> } = attachmentBlobs
+      ? { ...payload, attachmentBlobs }
+      : payload;
+    const blob = new Blob([JSON.stringify(full, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `crm-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast("Данные выгружены в JSON");
+    toast(attachmentIds.length > 0 ? `Данные выгружены в JSON (вложений: ${attachmentIds.length})` : "Данные выгружены в JSON");
   }
 
   function importData(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
-        const parsed = JSON.parse(String(reader.result)) as AppData;
+        const parsed = JSON.parse(String(reader.result)) as AppData & { attachmentBlobs?: Record<string, AttachmentBlobDump> };
         if (!parsed.tasks) throw new Error("bad shape");
         // Backfill any fields missing from an older backup before adopting it.
         replaceAll(migrate(parsed));
+        if (parsed.attachmentBlobs) await importAttachmentBlobs(parsed.attachmentBlobs);
         toast("Данные загружены из файла");
       } catch {
         toast("Не удалось прочитать файл — проверьте формат");
@@ -333,8 +343,7 @@ export default function SettingsPage() {
                     id="ai-key"
                     type={showAiKey ? "text" : "password"}
                     value={aiKey}
-                    onChange={(e) => setAiKey(e.target.value)}
-                    onBlur={() => persistAiIfValid()}
+                    onChange={(e) => { const v = e.target.value; setAiKey(v); persistAiIfValid({ apiKey: v }); }}
                     placeholder="Вставьте ключ"
                     className="pr-9"
                   />
@@ -350,15 +359,14 @@ export default function SettingsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-1.5">
                   <Label htmlFor="ai-model">Модель</Label>
-                  <Input id="ai-model" value={aiModel} onChange={(e) => setAiModel(e.target.value)} onBlur={() => persistAiIfValid()} placeholder="напр. tencent/hy3:free" />
+                  <Input id="ai-model" value={aiModel} onChange={(e) => { const v = e.target.value; setAiModel(v); persistAiIfValid({ model: v }); }} placeholder="напр. tencent/hy3:free" />
                 </div>
                 <div className="grid gap-1.5">
                   <Label htmlFor="ai-url">Endpoint (base URL)</Label>
                   <Input
                     id="ai-url"
                     value={aiBaseUrl}
-                    onChange={(e) => setAiBaseUrl(e.target.value)}
-                    onBlur={() => persistAiIfValid()}
+                    onChange={(e) => { const v = e.target.value; setAiBaseUrl(v); persistAiIfValid({ baseUrl: v }); }}
                     disabled={aiProvider !== "custom"}
                   />
                 </div>

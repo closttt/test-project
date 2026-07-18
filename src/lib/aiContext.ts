@@ -7,7 +7,7 @@ type Ctx = ReturnType<typeof useData>;
 
 /** Compact text snapshot of the user's live data — sent as the system prompt for every AI request. */
 export function buildAiContext(ctx: Ctx): string {
-  const { tasks, projects, notes, meetings, completionLog, gamification, pomodoroSessions } = ctx;
+  const { tasks, projects, notes, meetings, completionLog, gamification, pomodoroSessions, settings } = ctx;
 
   const openTasks = tasks.filter((t) => !t.done);
   const upcomingMeetings = [...meetings]
@@ -47,9 +47,26 @@ export function buildAiContext(ctx: Ctx): string {
     .slice(0, 8)
     .map((n) => `- ${n.title || "без названия"}`);
 
-  const overdueLines = overdue.slice(0, 20).map((t) => `- ${t.title} (срок: ${t.dueDate})`);
-  const todayLines = today.slice(0, 20).map((t) => `- ${t.title}${t.done ? " ✓" : ""}`);
-  const meetingLines = upcomingMeetings.map((m) => `- ${m.title} (${m.date} ${m.time})`);
+  // Estimate + priority per line — needed for the AI to reason about a realistic time-blocked
+  // plan ("Спланируй день"), not just list what's open.
+  const taskDetail = (t: (typeof tasks)[number]) =>
+    [t.estimateMin ? `~${formatDuration(t.estimateMin)}` : null, t.priority ? PRIORITY_META[t.priority].label : null]
+      .filter(Boolean)
+      .join(", ");
+  const overdueLines = overdue.slice(0, 20).map((t) => {
+    const d = taskDetail(t);
+    return `- ${t.title} (срок: ${t.dueDate}${d ? `, ${d}` : ""})`;
+  });
+  const todayLines = today.slice(0, 20).map((t) => {
+    const d = taskDetail(t);
+    return `- ${t.title}${t.done ? " ✓" : ""}${d ? ` [${d}]` : ""}`;
+  });
+  const meetingLines = upcomingMeetings.map((m) => `- ${m.title} (${m.date} ${m.time}, ${m.durationMin} мин)`);
+
+  const planningLines = [
+    settings.dailyFocusLimit > 0 ? `Дневной лимит задач: ${settings.dailyFocusLimit} (метод Иви Ли — остальное лучше не планировать на сегодня).` : null,
+    `Помодоро: ${settings.pomodoro.workMin} мин работы / ${settings.pomodoro.shortBreakMin} мин короткий перерыв / ${settings.pomodoro.longBreakMin} мин длинный перерыв каждые ${settings.pomodoro.roundsBeforeLong} циклов.`,
+  ].filter(Boolean);
 
   return [
     "Ты — ассистент личного таск-менеджера пользователя. Отвечай кратко, по-русски, по делу, опираясь на данные ниже.",
@@ -60,8 +77,9 @@ export function buildAiContext(ctx: Ctx): string {
     `Открытые по приоритету: ${byPriority.map((p) => `${p.label} — ${p.count}`).join(", ")}.`,
     "",
     overdueLines.length ? `## Просроченные задачи\n${overdueLines.join("\n")}` : "",
-    todayLines.length ? `## Задачи на сегодня\n${todayLines.join("\n")}` : "",
+    todayLines.length ? `## Задачи на сегодня (в скобках — оценка времени и приоритет, если заданы)\n${todayLines.join("\n")}` : "",
     meetingLines.length ? `## Предстоящие встречи\n${meetingLines.join("\n")}` : "",
+    `## Параметры планирования\n${planningLines.join("\n")}`,
     projectLines.length ? `## Проекты\n${projectLines.join("\n")}` : "",
     recentNotes.length ? `## Последние заметки\n${recentNotes.join("\n")}` : "",
   ].filter(Boolean).join("\n");

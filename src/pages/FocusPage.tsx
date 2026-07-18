@@ -11,6 +11,7 @@ import { TaskEditDialog } from "@/components/TaskEditDialog";
 import { useData } from "@/store/DataProvider";
 import { usePomodoro } from "@/store/PomodoroProvider";
 import { isToday, isOverdue, dueLabel } from "@/lib/format";
+import { isSnoozed } from "@/lib/taskGrouping";
 import { easeOut } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { Task } from "@/types";
@@ -24,7 +25,7 @@ export default function FocusPage() {
   const [editing, setEditing] = useState<Task | null>(null);
 
   const focusTasks = tasks
-    .filter((t) => t.dueDate && (isToday(t.dueDate) || isOverdue(t.dueDate)))
+    .filter((t) => t.dueDate && !isSnoozed(t) && (isToday(t.dueDate) || isOverdue(t.dueDate)))
     .sort((a, b) => {
       if (a.done !== b.done) return Number(a.done) - Number(b.done);
       return (a.dueDate ?? "").localeCompare(b.dueDate ?? "");

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarIcon, Sparkles, Star } from "lucide-react";
+import { CalendarIcon, Sparkles, Star, Bell, Timer, Repeat } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -20,11 +20,19 @@ import {
 } from "@/components/ui/select";
 import { TaskTag } from "@/components/TaskTag";
 import { PriorityPicker } from "@/components/PriorityPicker";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useData } from "@/store/DataProvider";
 import { useUI } from "@/store/UIProvider";
 import { parseNaturalInput } from "@/lib/nlp";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDuration } from "@/lib/format";
 import type { Priority } from "@/types";
+
+const RECURRENCE_LABEL: Record<string, string> = {
+  daily: "каждый день",
+  weekdays: "по будням",
+  weekly: "каждую неделю",
+  monthly: "каждый месяц",
+};
 
 const NONE = "none";
 
@@ -52,6 +60,9 @@ export function QuickAddDialog({ defaultProjectId }: { defaultProjectId?: string
       tags: parsed.tags,
       important: parsed.important,
       priority,
+      remindAt: parsed.remindAt,
+      estimateMin: parsed.estimateMin,
+      recurrence: parsed.recurrence,
     });
     reset();
     setQuickAddOpen(false);
@@ -64,7 +75,9 @@ export function QuickAddDialog({ defaultProjectId }: { defaultProjectId?: string
     setDueDateOverride("");
   }
 
-  const hasHints = !!parsed.dueDate || parsed.tags.length > 0 || parsed.important;
+  const hasHints =
+    !!parsed.dueDate || parsed.tags.length > 0 || parsed.important ||
+    !!parsed.remindAt || !!parsed.estimateMin || !!parsed.recurrence;
 
   return (
     <Dialog
@@ -102,6 +115,21 @@ export function QuickAddDialog({ defaultProjectId }: { defaultProjectId?: string
                     <Star className="h-3 w-3 fill-amber-400" /> важно
                   </span>
                 )}
+                {parsed.remindAt && (
+                  <span className="flex items-center gap-1 text-xs text-brand">
+                    <Bell className="h-3 w-3" /> {parsed.remindAt.slice(11, 16)}
+                  </span>
+                )}
+                {parsed.estimateMin && (
+                  <span className="flex items-center gap-1 text-xs text-brand">
+                    <Timer className="h-3 w-3" /> ≈ {formatDuration(parsed.estimateMin)}
+                  </span>
+                )}
+                {parsed.recurrence && (
+                  <span className="flex items-center gap-1 text-xs text-brand">
+                    <Repeat className="h-3 w-3" /> {RECURRENCE_LABEL[parsed.recurrence]}
+                  </span>
+                )}
                 {parsed.tags.map((t) => (
                   <TaskTag key={t} tag={t} />
                 ))}
@@ -116,8 +144,8 @@ export function QuickAddDialog({ defaultProjectId }: { defaultProjectId?: string
               </div>
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="qa-date">Срок</Label>
-              <Input id="qa-date" type="date" value={effectiveDueDate ?? ""} onChange={(e) => setDueDateOverride(e.target.value)} />
+              <Label>Срок</Label>
+              <DatePicker value={effectiveDueDate ?? undefined} onChange={(d) => setDueDateOverride(d ?? "")} placeholder="Без срока" />
             </div>
             <div className="grid gap-1.5">
               <Label>Проект</Label>
@@ -138,7 +166,7 @@ export function QuickAddDialog({ defaultProjectId }: { defaultProjectId?: string
           </div>
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <CalendarIcon className="h-3 w-3" />
-            Пишите прямо в строке: «завтра», «в пятницу», «через 3 дня», «#тег», «!важно».
+            Пишите прямо в строке: «завтра в 15:00», «через 3 дня», «~30м», «каждый день», «#тег», «!важно».
           </p>
         </div>
         <DialogFooter>

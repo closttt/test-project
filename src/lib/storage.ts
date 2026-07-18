@@ -45,6 +45,14 @@ export function migrate(data: AppData): AppData {
     customFields: c.customFields ?? [],
     touches: c.touches ?? [],
   }));
+  // Students subsystem added when the CRM section was resurfaced — backfill for older saves.
+  data.students = (data.students ?? []).map((s) => ({
+    ...s,
+    payments: s.payments ?? [],
+    tags: s.tags ?? [],
+    active: s.active ?? true,
+    paymentsPerMonth: s.paymentsPerMonth === 2 ? 2 : 1,
+  }));
   data.notes = (data.notes ?? []).map((n) => ({ ...n, pinned: n.pinned ?? false, tags: n.tags ?? [] }));
   data.meetings = (data.meetings ?? []).map((m) => ({
     ...m,
@@ -97,4 +105,43 @@ export function saveData(data: AppData): boolean {
     console.error("Failed to save data (localStorage write failed).", e);
     return false;
   }
+}
+
+/**
+ * Coalesces rapid-fire `saveData` calls (e.g. `Reorder.Group onReorder` firing on every pixel of
+ * a drag) into one write `delayMs` after the last change, instead of writing to localStorage on
+ * every intermediate state. `flush()` bypasses the delay for a synchronous, immediate write —
+ * callers MUST wire it to `visibilitychange`/`pagehide` (see DataProvider.tsx), or a debounced
+ * write in flight when the tab closes would silently drop the user's last edit. `flush()` is
+ * idempotent: calling it with nothing pending (already flushed, or never scheduled) is a no-op.
+ */
+export function createDebouncedSaver(delayMs = 400) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let pending: AppData | null = null;
+
+  function writePending() {
+    if (pending !== null) {
+      saveData(pending);
+      pending = null;
+    }
+  }
+
+  function schedule(data: AppData) {
+    pending = data;
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      writePending();
+    }, delayMs);
+  }
+
+  function flush() {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    writePending();
+  }
+
+  return { schedule, flush };
 }

@@ -21,7 +21,7 @@ export function AppShell({
   const { setAssistantOpen } = useUI();
   return (
     <>
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-4 backdrop-blur md:px-6">
+      <header className="glass sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border px-4 py-4 md:px-6">
         <div className="min-w-0">
           <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
           {description && (

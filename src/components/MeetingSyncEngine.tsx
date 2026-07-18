@@ -2,8 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
-import { isSupabaseConfigured } from "@/lib/supabase";
-import { drainIncomingMeetings } from "@/lib/meetingSync";
+import { isSupabaseEnvSet } from "@/lib/supabaseEnv";
 
 const POLL_MS = 60_000;
 
@@ -16,6 +15,11 @@ const POLL_MS = 60_000;
  *
  * The import itself lives in lib/meetingSync.ts so this poller and the manual
  * "Синхронизировать сейчас" button in Settings can't drift apart.
+ *
+ * lib/meetingSync.ts (and the @supabase/supabase-js client it pulls in) is loaded via dynamic
+ * import() instead of a static one — this component is always mounted (AppLayout.tsx), so a
+ * static import would put the Supabase client in every user's main bundle even when the feature
+ * is off. isSupabaseEnvSet() is a dependency-free check that avoids that entirely.
  */
 export function MeetingSyncEngine() {
   const { addMeeting } = useData();
@@ -24,12 +28,13 @@ export function MeetingSyncEngine() {
   const busy = useRef(false);
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
+    if (!isSupabaseEnvSet()) return;
 
     async function tick() {
       if (busy.current) return;
       busy.current = true;
       try {
+        const { drainIncomingMeetings } = await import("@/lib/meetingSync");
         const { imported, firstTitle } = await drainIncomingMeetings(addMeeting);
         if (imported === 1) toast(`Встреча из приглашения: ${firstTitle}`);
         else if (imported > 1) toast(`Импортировано встреч: ${imported}`);

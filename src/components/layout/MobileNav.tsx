@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
+  Users,
   FolderKanban,
   CheckSquare,
   StickyNote,
@@ -17,6 +18,7 @@ import { NAV_CHANGED_EVENT } from "@/components/layout/Sidebar";
 
 const ICONS: Record<string, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
+  clients: Users,
   projects: FolderKanban,
   tasks: CheckSquare,
   notes: StickyNote,

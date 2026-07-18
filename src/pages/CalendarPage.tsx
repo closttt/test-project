@@ -30,7 +30,8 @@ import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
 import { PriorityFlag } from "@/components/PriorityFlag";
 import { TaskEditDialog } from "@/components/TaskEditDialog";
-import { isToday } from "@/lib/format";
+import { isToday, todayStr } from "@/lib/format";
+import { DatePicker } from "@/components/ui/date-picker";
 import { WEEKDAYS, WEEKDAYS_LONG, MONTHS, ymd, buildMonthGrid } from "@/lib/calendar";
 import { cn } from "@/lib/utils";
 import type { Meeting, Task } from "@/types";
@@ -449,8 +450,8 @@ export default function CalendarPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-1.5">
-                <Label htmlFor="m-date">Дата *</Label>
-                <Input id="m-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                <Label>Дата *</Label>
+                <DatePicker value={date} onChange={(d) => setDate(d ?? todayStr())} allowClear={false} />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="m-time">Время</Label>

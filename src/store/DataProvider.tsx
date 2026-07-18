@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type {
   AppData,
   Client,
+  Student,
   Project,
   Task,
   Note,
@@ -18,7 +19,7 @@ import type {
   ProjectTemplateTask,
 } from "@/types";
 import { ACCENTS } from "@/types";
-import { loadData, saveData } from "@/lib/storage";
+import { loadData, createDebouncedSaver } from "@/lib/storage";
 import { seedData } from "@/lib/seed";
 import { uid } from "@/lib/id";
 import { daysSince, todayStr, localDayStr } from "@/lib/format";
@@ -48,10 +49,22 @@ interface DataContextValue extends AppData {
   deleteClient: (id: string) => void;
   restoreClient: (client: Client) => void;
   addPayment: (clientId: string, payment: Omit<Payment, "id">) => void;
+  updatePayment: (clientId: string, paymentId: string, patch: Partial<Payment>) => void;
   deletePayment: (clientId: string, paymentId: string) => void;
   addTouch: (clientId: string, touch: Omit<Touch, "id">) => void;
   deleteTouch: (clientId: string, touchId: string) => void;
-  addProject: (input: Omit<Project, "id" | "createdAt">) => void;
+  addStudent: (
+    input: Omit<Student, "id" | "createdAt" | "payments" | "tags" | "active"> &
+      Partial<Pick<Student, "payments" | "tags" | "active">>
+  ) => void;
+  updateStudent: (id: string, patch: Partial<Student>) => void;
+  deleteStudent: (id: string) => void;
+  restoreStudent: (student: Student) => void;
+  addStudentPayment: (studentId: string, payment: Omit<Payment, "id">) => void;
+  updateStudentPayment: (studentId: string, paymentId: string, patch: Partial<Payment>) => void;
+  deleteStudentPayment: (studentId: string, paymentId: string) => void;
+  /** Returns the new project's id (used by callers that need to act on it right away, e.g. the AI tools). */
+  addProject: (input: Omit<Project, "id" | "createdAt">) => string;
   updateProject: (id: string, patch: Partial<Project>) => void;
   addProjectSection: (projectId: string, name: string) => void;
   deleteProjectSection: (projectId: string, name: string) => void;
@@ -61,6 +74,7 @@ interface DataContextValue extends AppData {
   deleteProjectComment: (projectId: string, commentId: string) => void;
   deleteProject: (id: string) => void;
   restoreProject: (project: Project) => void;
+  /** Returns the new task's id (used by callers that need to act on it right away, e.g. the AI tools). */
   addTask: (
     input: Omit<
       Task,
@@ -73,7 +87,7 @@ interface DataContextValue extends AppData {
       recurrence?: Task["recurrence"];
       links?: string[];
     }
-  ) => void;
+  ) => string;
   updateTask: (id: string, patch: Partial<Task>) => void;
   toggleTask: (id: string) => void;
   toggleImportant: (id: string) => void;
@@ -93,7 +107,8 @@ interface DataContextValue extends AppData {
   archiveNote: (id: string) => void;
   unarchiveNote: (id: string) => void;
   addPomodoroSession: (session: Omit<PomodoroSession, "id" | "date">) => void;
-  addNote: (input: Omit<Note, "id" | "createdAt" | "tags"> & { tags?: string[] }) => void;
+  /** Returns the new note's id (used by callers that need to act on it right away, e.g. the AI tools). */
+  addNote: (input: Omit<Note, "id" | "createdAt" | "tags"> & { tags?: string[] }) => string;
   updateNote: (id: string, patch: Partial<Note>) => void;
   /** Persist a manual order for the given note ids (used by drag-to-reorder). */
   reorderNotes: (orderedIds: string[]) => void;
@@ -157,10 +172,32 @@ function advanceDate(dateStr: string, rec: Exclude<Recurrence, "none">): string 
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => loadData() ?? seedData());
+  // Debounced so a drag-reorder (Reorder.Group onReorder fires on every pixel moved) doesn't
+  // write to localStorage on every intermediate frame — see createDebouncedSaver's docstring for
+  // why flush() below is not optional.
+  const saverRef = useRef(createDebouncedSaver());
 
   useEffect(() => {
-    saveData(data);
+    saverRef.current.schedule(data);
   }, [data]);
+
+  // A debounced write still in flight when the tab is closed/hidden/backgrounded would silently
+  // drop the user's last edit — flush immediately on every signal that the page might not get
+  // another tick. pagehide (not just beforeunload) also covers mobile Safari's bfcache path and
+  // simple tab switches; visibilitychange:hidden covers backgrounding without a full unload.
+  useEffect(() => {
+    const flush = () => saverRef.current.flush();
+    const onVisibility = () => { if (document.visibilityState === "hidden") flush(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", flush);
+      flush();
+    };
+  }, []);
 
   // Apply theme + accent + density to <html> so tokens switch app-wide.
   useEffect(() => {
@@ -236,6 +273,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
               : c
           ),
         })),
+      updatePayment: (clientId, paymentId, patch) =>
+        setData((d) => ({
+          ...d,
+          clients: d.clients.map((c) =>
+            c.id === clientId
+              ? { ...c, payments: c.payments.map((p) => (p.id === paymentId ? { ...p, ...patch } : p)) }
+              : c
+          ),
+        })),
       deletePayment: (clientId, paymentId) =>
         setData((d) => ({
           ...d,
@@ -260,11 +306,55 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ),
         })),
 
-      addProject: (input) =>
+      addStudent: (input) =>
         setData((d) => ({
           ...d,
-          projects: [...d.projects, { ...input, id: uid(), createdAt: new Date().toISOString() }],
+          students: [
+            ...d.students,
+            { active: true, payments: [], tags: [], ...input, id: uid(), createdAt: new Date().toISOString() },
+          ],
         })),
+      updateStudent: (id, patch) =>
+        setData((d) => ({
+          ...d,
+          students: d.students.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+        })),
+      deleteStudent: (id) =>
+        setData((d) => ({ ...d, students: d.students.filter((s) => s.id !== id) })),
+      restoreStudent: (student) =>
+        setData((d) => ({ ...d, students: [...d.students, student] })),
+      addStudentPayment: (studentId, payment) =>
+        setData((d) => ({
+          ...d,
+          students: d.students.map((s) =>
+            s.id === studentId ? { ...s, payments: [...s.payments, { ...payment, id: uid() }] } : s
+          ),
+        })),
+      updateStudentPayment: (studentId, paymentId, patch) =>
+        setData((d) => ({
+          ...d,
+          students: d.students.map((s) =>
+            s.id === studentId
+              ? { ...s, payments: s.payments.map((p) => (p.id === paymentId ? { ...p, ...patch } : p)) }
+              : s
+          ),
+        })),
+      deleteStudentPayment: (studentId, paymentId) =>
+        setData((d) => ({
+          ...d,
+          students: d.students.map((s) =>
+            s.id === studentId ? { ...s, payments: s.payments.filter((p) => p.id !== paymentId) } : s
+          ),
+        })),
+
+      addProject: (input) => {
+        const id = uid();
+        setData((d) => ({
+          ...d,
+          projects: [...d.projects, { ...input, id, createdAt: new Date().toISOString() }],
+        }));
+        return id;
+      },
       updateProject: (id, patch) =>
         setData((d) => ({
           ...d,
@@ -333,13 +423,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       restoreProject: (project) =>
         setData((d) => ({ ...d, projects: [...d.projects, project] })),
 
-      addTask: ({ subtaskTitles, tags, important, priority, recurrence, links, ...input }) =>
+      addTask: ({ subtaskTitles, tags, important, priority, recurrence, links, ...input }) => {
+        const id = uid();
         setData((d) => ({
           ...d,
           tasks: [
             {
               ...input,
-              id: uid(),
+              id,
               createdAt: new Date().toISOString(),
               order: -1,
               important: important ?? false,
@@ -357,7 +448,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
             },
             ...d.tasks.map((t) => ({ ...t, order: t.order + 1 })),
           ].map((t, i) => ({ ...t, order: i })),
-        })),
+        }));
+        return id;
+      },
       updateTask: (id, patch) =>
         setData((d) => ({
           ...d,
@@ -553,11 +646,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           };
         }),
 
-      addNote: (input) =>
+      addNote: (input) => {
+        const id = uid();
         setData((d) => ({
           ...d,
-          notes: [...d.notes, { tags: [], ...input, id: uid(), createdAt: new Date().toISOString() }],
-        })),
+          notes: [...d.notes, { tags: [], ...input, id, createdAt: new Date().toISOString() }],
+        }));
+        return id;
+      },
       updateNote: (id, patch) =>
         setData((d) => ({
           ...d,

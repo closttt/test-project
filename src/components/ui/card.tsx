@@ -7,7 +7,10 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
     <div
       ref={ref}
       className={cn(
-        "rounded-lg border border-border bg-card text-card-foreground shadow-sm",
+        // Flat matte surface, reference aesthetic: a hairline border on a slightly-lifted fill
+        // does the separating — no gradient sheen, no glow shadow. Card is the shared primitive
+        // on every page, so this one clean definition sets the whole app's surface treatment.
+        "rounded-xl border border-border bg-card text-card-foreground",
         className
       )}
       {...props}

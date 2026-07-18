@@ -201,6 +201,9 @@ export default function ProjectDetail() {
       dueDate: newTaskDate || parsed.dueDate,
       tags: parsed.tags,
       important: parsed.important,
+      remindAt: parsed.remindAt,
+      estimateMin: parsed.estimateMin,
+      recurrence: parsed.recurrence,
     });
     setNewTask("");
     setNewTaskPriority(0);
@@ -375,15 +378,9 @@ export default function ProjectDetail() {
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
-            <div className="px-2 py-1.5">
-              <p className="mb-1 text-xs text-muted-foreground">Или выбрать дату</p>
-              <Input
-                type="date"
-                className="h-8 text-xs"
-                value={t.dueDate ?? ""}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => updateTask(t.id, { dueDate: e.target.value || undefined })}
-              />
+            <div className="px-1 py-1" onClick={(e) => e.stopPropagation()}>
+              <p className="mb-1 px-1 text-xs text-muted-foreground">Или выбрать дату</p>
+              <Calendar selected={t.dueDate} onSelect={(d) => updateTask(t.id, { dueDate: d })} />
             </div>
           </DropdownMenuContent>
         </DropdownMenu>

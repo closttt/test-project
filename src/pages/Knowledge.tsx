@@ -20,6 +20,8 @@ import { formatDate, formatDateTime, isToday, addDays } from "@/lib/format";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { isSupabaseConfigured, fetchKnowledgeCards, deleteKnowledgeCard, updateKnowledgeCardSource } from "@/lib/supabase";
+import { ShimmerSkeleton } from "@/components/unlumen-ui/shimmer-skeleton";
+import { ProgressiveBlur } from "@/components/unlumen-ui/progressive-blur";
 import type { KnowledgeCard } from "@/types";
 
 const POLL_MS = 60_000;
@@ -53,6 +55,19 @@ function dayLabel(iso: string): string {
   return formatDate(iso);
 }
 
+function CardSkeleton() {
+  return (
+    <div className="mb-4 flex flex-col gap-3 overflow-hidden rounded-lg border border-border break-inside-avoid">
+      <ShimmerSkeleton className="h-36 w-full" rounded="none" />
+      <div className="flex flex-col gap-2 p-4 pt-0">
+        <ShimmerSkeleton className="h-4 w-3/4" />
+        <ShimmerSkeleton className="h-3 w-full" />
+        <ShimmerSkeleton className="h-3 w-2/3" />
+      </div>
+    </div>
+  );
+}
+
 function CardThumb({ url, name }: { url?: string; name: string }) {
   if (!url) {
     return (
@@ -61,7 +76,14 @@ function CardThumb({ url, name }: { url?: string; name: string }) {
       </div>
     );
   }
-  return <img src={url} alt={name} className="block h-auto w-full" />;
+  return (
+    <div className="relative">
+      <img src={url} alt={name} className="block h-auto w-full" />
+      {/* Permanent (not hover-only) fade so the image settles into the card body below it,
+          instead of ending on a hard edge — same treatment on every card, not a hover reveal. */}
+      <ProgressiveBlur side="bottom" size={48} strength={6} tintStrength={0.9} />
+    </div>
+  );
 }
 
 export default function Knowledge() {
@@ -269,10 +291,14 @@ export default function Knowledge() {
         <Card className="border-risk/30">
           <CardContent className="p-4 text-sm text-risk">{error}</CardContent>
         </Card>
+      ) : loading && cards.length === 0 ? (
+        <div className="columns-1 gap-4 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5">
+          {Array.from({ length: 10 }, (_, i) => <CardSkeleton key={i} />)}
+        </div>
       ) : cards.length === 0 ? (
         <EmptyState
           icon={BookMarked}
-          title={loading ? "Загрузка…" : "Пока пусто"}
+          title="Пока пусто"
           description="Перешлите пост в Telegram-бота Hermes Agent — карточка появится здесь автоматически."
         />
       ) : (

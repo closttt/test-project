@@ -78,6 +78,26 @@ export interface Client {
   createdAt: string;
 }
 
+/**
+ * A student on a recurring monthly plan (kept deliberately simpler than Client — no touches/risk).
+ * The owner updates payments by hand. Reuses the `Payment` shape for history.
+ */
+export interface Student {
+  id: string;
+  name: string;
+  note?: string;
+  /** Total monthly fee. */
+  monthlyFee: number;
+  /** How many payments the month is split into: 1 (whole) or 2 (half + half). */
+  paymentsPerMonth: 1 | 2;
+  /** Inactive students are hidden from the default list but keep their history. */
+  active: boolean;
+  /** Payment history — same shape as client payments (amount, status, date, note). */
+  payments: Payment[];
+  tags: string[];
+  createdAt: string;
+}
+
 export interface ProjectComment {
   id: string;
   text: string;
@@ -314,6 +334,7 @@ export const DEFAULT_GAMIFICATION: Gamification = {
 
 export interface AppData {
   clients: Client[];
+  students: Student[];
   projects: Project[];
   tasks: Task[];
   notes: Note[];

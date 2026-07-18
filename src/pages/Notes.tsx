@@ -247,6 +247,7 @@ export default function Notes() {
           description="Держите здесь мысли, идеи и черновики. Заметку можно связать с клиентом или проектом — и открывать одним кликом."
           actionLabel="Добавить заметку"
           onAction={openCreate}
+          shortcut="Q"
         />
       ) : (
         <>

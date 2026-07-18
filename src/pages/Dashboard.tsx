@@ -30,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Segmented } from "@/components/ui/segmented";
 import { Calendar } from "@/components/ui/calendar";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -50,6 +51,7 @@ import { PriorityPicker } from "@/components/PriorityPicker";
 import { StreakFlame } from "@/components/StreakFlame";
 import { ProjectHealthBadge } from "@/components/ProjectHealthBadge";
 import { projectHealth, type HealthLevel } from "@/lib/projectHealth";
+import { isSnoozed } from "@/lib/taskGrouping";
 import { TaskEditDialog } from "@/components/TaskEditDialog";
 import { AreaChart } from "@/components/charts/AreaChart";
 import { DonutGauge } from "@/components/charts/DonutGauge";
@@ -86,7 +88,7 @@ function Stat({ icon: Icon, label, value, accent, onClick }: { icon: typeof Cloc
   return (
     <Card
       onClick={onClick}
-      className={cn("flex h-full flex-col justify-center p-4", onClick && "cursor-pointer transition-colors hover:border-muted-foreground/30")}
+      className={cn("flex h-full flex-col justify-center p-4", onClick && "cursor-pointer transition-colors hover:border-muted-foreground/25")}
     >
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{label}</span>
@@ -152,7 +154,9 @@ export default function Dashboard() {
   const streak = computeStreak(completionLog);
 
   const todayTasks = tasks
-    .filter((t) => t.dueDate && (isToday(t.dueDate) || (isOverdue(t.dueDate) && !t.done)))
+    // A snoozed task is an explicit "don't bother me with this yet" — respect it here the same
+    // way the Tasks page's own smart lists already do, even if the due date is today/overdue.
+    .filter((t) => t.dueDate && !isSnoozed(t) && (isToday(t.dueDate) || (isOverdue(t.dueDate) && !t.done)))
     .sort((a, b) => {
       if (a.done !== b.done) return Number(a.done) - Number(b.done);
       if (a.priority !== b.priority) return (a.priority || 9) - (b.priority || 9);
@@ -216,6 +220,9 @@ export default function Dashboard() {
       priority: newTaskPriority,
       tags: parsed.tags,
       important: parsed.important,
+      remindAt: parsed.remindAt,
+      estimateMin: parsed.estimateMin,
+      recurrence: parsed.recurrence,
     });
     setNewTask("");
     setNewTaskPriority(0);
@@ -486,9 +493,9 @@ export default function Dashboard() {
   const hiddenWidgets = WIDGETS.filter((w) => hidden.includes(w.id));
 
   // Mobile stack order + per-widget heights (KPIs are short, big widgets need room).
-  const KPI_IDS = ["kpi-today", "kpi-time", "kpi-open", "kpi-week"];
+  const KPI_IDS = ["kpi-money", "kpi-expected", "kpi-today", "kpi-time", "kpi-open", "kpi-week"];
   const MOBILE_H: Record<string, string> = {
-    dynamics: "h-60", status: "h-[26rem]", today: "h-[26rem]", meetings: "h-64", note: "h-48", projects: "h-64",
+    dynamics: "h-60", status: "h-[26rem]", today: "h-[26rem]", "crm-risk": "h-80", meetings: "h-64", note: "h-48", projects: "h-64",
   };
   const mobileOrder = WIDGETS.map((w) => w.id).filter((id) => !hidden.includes(id));
   const mobileKpis = mobileOrder.filter((id) => KPI_IDS.includes(id));
@@ -749,8 +756,8 @@ export default function Dashboard() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-1.5">
-                <Label htmlFor="m-date">Дата</Label>
-                <Input id="m-date" type="date" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} />
+                <Label>Дата</Label>
+                <DatePicker value={meetingDate} onChange={(d) => setMeetingDate(d ?? todayStr())} allowClear={false} />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="m-time">Время</Label>

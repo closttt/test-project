@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
@@ -243,15 +244,9 @@ export function TaskEditDialog({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <div className="px-2 py-1.5">
-                  <p className="mb-1 text-xs text-muted-foreground">Или выбрать дату</p>
-                  <Input
-                    type="date"
-                    className="h-8 text-xs"
-                    value={live.dueDate ?? ""}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => updateTask(live.id, { dueDate: e.target.value || undefined })}
-                  />
+                <div className="px-1 py-1" onClick={(e) => e.stopPropagation()}>
+                  <p className="mb-1 px-1 text-xs text-muted-foreground">Или выбрать дату</p>
+                  <Calendar selected={live.dueDate} onSelect={(d) => updateTask(live.id, { dueDate: d })} />
                 </div>
                 <DropdownMenuSeparator />
                 <div className="px-2 py-1.5">

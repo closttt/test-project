@@ -1,4 +1,5 @@
 import { useChartTooltip, ChartTooltipBubble } from "@/components/charts/ChartTooltip";
+import { cn } from "@/lib/utils";
 
 export interface Bar {
   label: string;
@@ -6,7 +7,12 @@ export interface Bar {
   highlight?: boolean;
 }
 
-/** Vertical bar chart with value labels (reference "Opportunity Analysis" style). */
+/**
+ * Vertical column chart. Per the dataviz mark spec: columns are capped thin (never fill the slot —
+ * the band's leftover is air), carry a 4px rounded top with a square baseline, and grow from one
+ * baseline. The value rides the cap; the highlighted column carries the series colour, the rest a
+ * recessive wash.
+ */
 export function BarChart({
   data,
   height = 150,
@@ -22,8 +28,8 @@ export function BarChart({
   const { containerRef, tooltip, showAt, hide } = useChartTooltip();
   const max = Math.max(1, ...data.map((d) => d.value));
   return (
-    <div ref={containerRef} className={`relative ${className ?? ""}`} style={{ height }}>
-      <div className="flex h-full items-stretch gap-2">
+    <div ref={containerRef} className={cn("relative", className)} style={{ height }}>
+      <div className="flex h-full items-stretch gap-1.5">
         {data.map((d, i) => {
           const pct = (d.value / max) * 100;
           return (
@@ -34,13 +40,17 @@ export function BarChart({
               onMouseMove={(e) => showAt(e.clientX, e.clientY, `${d.label}: ${formatValue(d.value)}`)}
               onMouseLeave={hide}
             >
-              <span className="text-[0.7rem] font-medium text-foreground">{d.value}</span>
-              {/* flex-1 track gives the percentage-height bar a definite parent height */}
-              <div className="flex w-full flex-1 items-end">
+              <span className={cn("text-[0.7rem] font-medium tabular-nums", d.highlight ? "text-foreground" : "text-muted-foreground")}>
+                {d.value}
+              </span>
+              {/* flex-1 track gives the percentage-height column a definite parent height; cap the
+                  column width so it never fills the slot (air on both sides), rounded top only. */}
+              <div className="flex w-full flex-1 items-end justify-center">
                 <div
-                  className={`w-full rounded-t-md transition-all ${
-                    d.highlight ? "bg-success/80" : "bg-success/25"
-                  }`}
+                  className={cn(
+                    "w-full max-w-[24px] rounded-t transition-all",
+                    d.highlight ? "bg-success" : "bg-success/20"
+                  )}
                   style={{ height: `${Math.max(2, pct)}%` }}
                 />
               </div>

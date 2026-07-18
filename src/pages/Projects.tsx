@@ -181,7 +181,7 @@ export default function Projects() {
               <Button variant="outline" size="sm" onClick={() => setFilter("all")}>Показать все</Button>
             </div>
           ) : (
-        <StaggerList className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <StaggerList className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {visibleProjects.map((project) => {
             const projectTasks = tasks.filter((t) => t.projectId === project.id);
             const doneCount = projectTasks.filter((t) => t.done).length;

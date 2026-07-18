@@ -7,6 +7,7 @@ export interface NavItemMeta {
 
 export const NAV_ITEMS: NavItemMeta[] = [
   { id: "dashboard", label: "Дашборд", to: "/" },
+  { id: "clients", label: "Клиенты", to: "/clients" },
   { id: "projects", label: "Проекты", to: "/projects" },
   { id: "tasks", label: "Задачи", to: "/tasks" },
   { id: "notes", label: "Заметки", to: "/notes" },

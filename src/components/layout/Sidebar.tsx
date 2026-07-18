@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard,
+  Users,
   FolderKanban,
   CheckSquare,
   StickyNote,
@@ -24,6 +25,7 @@ import { NAV_ITEMS, loadNavOrder, loadNavHidden } from "@/lib/navConfig";
 
 const ICONS: Record<string, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
+  clients: Users,
   projects: FolderKanban,
   tasks: CheckSquare,
   notes: StickyNote,
@@ -63,7 +65,7 @@ function NavItem({
       {isActive && (
         <motion.span
           layoutId="sidebar-active"
-          className="absolute inset-0 rounded-md bg-secondary"
+          className="absolute inset-0 rounded-lg border border-border bg-secondary"
           transition={{ type: "spring", stiffness: 500, damping: 40 }}
         />
       )}
@@ -122,9 +124,14 @@ export function Sidebar() {
     }));
 
   return (
-    <aside className="hidden md:flex w-60 shrink-0 flex-col justify-between border-r border-border bg-card/40 p-4">
+    <aside className="hidden md:flex w-60 shrink-0 flex-col justify-between border-r border-border bg-card/30 p-4">
       <div>
-        <div className="mb-6 px-2 text-lg font-semibold tracking-tight">Рабочий стол</div>
+        <div className="mb-6 flex items-center gap-2.5 px-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-sm font-bold text-brand-foreground">
+            Р
+          </span>
+          <span className="text-[15px] font-semibold tracking-tight">Рабочий стол</span>
+        </div>
         <nav className="flex flex-col gap-1">
           {primary.map((l) => (
             <NavItem key={l.to} {...l} activePath={pathname} />

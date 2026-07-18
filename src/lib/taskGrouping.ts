@@ -52,6 +52,14 @@ export function bucketOf(task: Task): TimeBucket {
   return bucketOfDate(task.dueDate);
 }
 
+/** Hidden from every active list until its snooze date passes — regardless of due date. This is
+ * the app's existing "don't clutter Сегодня before its time" mechanic (an explicit per-task
+ * postpone, set via the snooze menu), so date-bucketed views must respect it the same way the
+ * Tasks page's own smart lists already do. */
+export function isSnoozed(t: Task): boolean {
+  return !!t.snoozedUntil && t.snoozedUntil > todayStr();
+}
+
 /**
  * Group dated items into ordered, non-empty time sections. Within each section they're
  * sorted by date then priority so the soonest / most-important float up.
@@ -84,5 +92,5 @@ export function groupByTime<T extends TimeGroupable>(
 }
 
 export function groupTasksByTime(tasks: Task[]): TaskGroup[] {
-  return groupByTime(tasks);
+  return groupByTime(tasks.filter((t) => !isSnoozed(t)));
 }

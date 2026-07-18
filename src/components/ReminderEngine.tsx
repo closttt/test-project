@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
 import { hasFired, markFired, fireBrowserNotification } from "@/lib/reminders";
-import { isPushConfigured, currentSubscription, syncReminders } from "@/lib/push";
+import { isPushEnvSet } from "@/lib/pushEnv";
 import { isQuietHour } from "@/types";
 
 const HOUR = 60 * 60 * 1000;
@@ -52,13 +52,20 @@ export function ReminderEngine() {
   /**
    * Keeps the push queue in step with local reminders, so a reminder that's cleared or a task
    * that's closed can't still buzz the phone later. No-ops entirely unless push is set up.
+   *
+   * lib/push.ts (and @supabase/supabase-js underneath it) is loaded via dynamic import() rather
+   * than a static one — this component is always mounted, so a static import would ship the
+   * Supabase client in every user's main bundle even with push off. isPushEnvSet() is the
+   * dependency-free version of the same check (see lib/pushEnv.ts).
    */
   useEffect(() => {
-    if (!isPushConfigured()) return;
+    if (!isPushEnvSet()) return;
     let cancelled = false;
-    currentSubscription().then((sub) => {
-      if (sub && !cancelled) syncReminders(tasks).catch(() => { /* offline — next change retries */ });
-    });
+    import("@/lib/push").then(({ currentSubscription, syncReminders }) =>
+      currentSubscription().then((sub) => {
+        if (sub && !cancelled) syncReminders(tasks).catch(() => { /* offline — next change retries */ });
+      })
+    );
     return () => { cancelled = true; };
   }, [tasks]);
 

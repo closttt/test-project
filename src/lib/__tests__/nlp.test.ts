@@ -66,3 +66,89 @@ describe("parseNaturalInput — tags and importance (unaffected by the \\b bug)"
     expect(r.title).toBe("сделать отчёт");
   });
 });
+
+describe("parseNaturalInput — time → remindAt", () => {
+  it("parses 'в HH:MM' and combines with today when no date word is present", () => {
+    const r = parseNaturalInput("позвонить в 15:00");
+    expect(r.remindAt).toBe("2026-07-15T15:00");
+    expect(r.title).toBe("позвонить");
+  });
+
+  it("combines a parsed time with a parsed date word", () => {
+    const r = parseNaturalInput("написать завтра в 9:30");
+    expect(r.dueDate).toBe("2026-07-16");
+    expect(r.remindAt).toBe("2026-07-16T09:30");
+    expect(r.title).toBe("написать");
+  });
+
+  it("accepts a bare HH:MM without 'в'", () => {
+    const r = parseNaturalInput("созвон 9:05");
+    expect(r.remindAt).toBe("2026-07-15T09:05");
+  });
+
+  it("leaves remindAt undefined when no time is present", () => {
+    expect(parseNaturalInput("написать завтра").remindAt).toBeUndefined();
+  });
+});
+
+describe("parseNaturalInput — duration → estimateMin", () => {
+  it("parses minutes-only shorthand '~30м'", () => {
+    const r = parseNaturalInput("собрать макет ~30м");
+    expect(r.estimateMin).toBe(30);
+    expect(r.title).toBe("собрать макет");
+  });
+
+  it("parses the spelled-out 'мин'", () => {
+    expect(parseNaturalInput("созвон ~45мин").estimateMin).toBe(45);
+  });
+
+  it("parses hours-only '~2ч'", () => {
+    expect(parseNaturalInput("ревью ~2ч").estimateMin).toBe(120);
+  });
+
+  it("parses combined hours+minutes '~1ч30м'", () => {
+    const r = parseNaturalInput("сделать отчёт ~1ч30м");
+    expect(r.estimateMin).toBe(90);
+    expect(r.title).toBe("сделать отчёт");
+  });
+
+  it("leaves estimateMin undefined when no duration hint is present", () => {
+    expect(parseNaturalInput("написать завтра").estimateMin).toBeUndefined();
+  });
+});
+
+describe("parseNaturalInput — recurrence words", () => {
+  it("parses 'каждый день' as daily", () => {
+    const r = parseNaturalInput("зарядка каждый день");
+    expect(r.recurrence).toBe("daily");
+    expect(r.title).toBe("зарядка");
+  });
+
+  it("parses 'по будням' as weekdays", () => {
+    expect(parseNaturalInput("стендап по будням").recurrence).toBe("weekdays");
+  });
+
+  it("parses 'каждую неделю' as weekly", () => {
+    expect(parseNaturalInput("отчёт каждую неделю").recurrence).toBe("weekly");
+  });
+
+  it("parses 'каждый месяц' as monthly", () => {
+    expect(parseNaturalInput("инвойс каждый месяц").recurrence).toBe("monthly");
+  });
+
+  it("leaves recurrence undefined when no recurrence word is present", () => {
+    expect(parseNaturalInput("написать завтра").recurrence).toBeUndefined();
+  });
+});
+
+describe("parseNaturalInput — combined hints", () => {
+  it("parses date + time + duration + tag + importance together, title fully cleaned", () => {
+    const r = parseNaturalInput("созвон с клиентом завтра в 15:00 ~30м #клиент !важно");
+    expect(r.dueDate).toBe("2026-07-16");
+    expect(r.remindAt).toBe("2026-07-16T15:00");
+    expect(r.estimateMin).toBe(30);
+    expect(r.tags).toEqual(["клиент"]);
+    expect(r.important).toBe(true);
+    expect(r.title).toBe("созвон с клиентом");
+  });
+});

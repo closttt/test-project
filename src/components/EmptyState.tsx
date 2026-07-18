@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/unlumen-ui/kbd";
 import { easeOut } from "@/lib/motion";
 
 /**
@@ -14,12 +15,16 @@ export function EmptyState({
   description,
   actionLabel,
   onAction,
+  shortcut,
 }: {
   icon: LucideIcon;
   title: string;
   description: string;
   actionLabel?: string;
   onAction?: () => void;
+  /** A global keyboard shortcut that does the same thing — shown as a passive hint (Superhuman-style:
+   * seeing the key next to the action teaches it without a separate tutorial). */
+  shortcut?: string;
 }) {
   const reduce = useReducedMotion();
   return (
@@ -44,9 +49,15 @@ export function EmptyState({
       <h3 className="text-base font-medium">{title}</h3>
       <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
       {actionLabel && onAction && (
-        <Button className="mt-5" onClick={onAction}>
-          {actionLabel}
-        </Button>
+        <div className="mt-5 flex flex-col items-center gap-2">
+          <Button onClick={onAction}>{actionLabel}</Button>
+          {shortcut && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              или нажмите
+              <Kbd size="sm">{shortcut}</Kbd>
+            </span>
+          )}
+        </div>
       )}
     </motion.div>
   );

@@ -5,7 +5,8 @@ export interface WidgetMeta {
   title: string;
 }
 
-/** All dashboard widgets, in default order. */
+/** All dashboard widgets, in default order. Money/risk widgets live on the Клиенты page instead —
+ * the dashboard stays task-focused (moved there per explicit feedback, not duplicated in both places). */
 export const WIDGETS: WidgetMeta[] = [
   { id: "kpi-today", title: "Задачи сегодня" },
   { id: "kpi-time", title: "Время сегодня" },

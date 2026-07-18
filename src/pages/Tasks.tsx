@@ -33,6 +33,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Calendar } from "@/components/ui/calendar";
 import { AnimatedCheckbox } from "@/components/ui/animated-checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -61,6 +62,7 @@ import { loadKanbanColumns, saveKanbanColumns, newKanbanColumn, COLUMN_COLORS, C
 import { pushUndo } from "@/lib/undoStack";
 import { pushRecent } from "@/lib/recent";
 import { blockingTasks, isBlocked } from "@/lib/dependencies";
+import { isSnoozed } from "@/lib/taskGrouping";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/format";
 import { PRIORITY_META, type Task, type Meeting } from "@/types";
@@ -77,10 +79,6 @@ const LISTS: { key: SmartList; label: string }[] = [
   { key: "snoozed", label: "Отложенные" },
   { key: "done", label: "Завершённые" },
 ];
-
-function isSnoozed(t: Task): boolean {
-  return !!t.snoozedUntil && t.snoozedUntil > todayStr();
-}
 
 function matchesList(t: Task, list: SmartList): boolean {
   if (list === "snoozed") return !t.done && isSnoozed(t);
@@ -211,6 +209,8 @@ export default function Tasks() {
   }
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // j/k roving cursor — a row key ("t-<id>" / "m-<id>") from `flatRows`, or null when nothing's focused.
+  const [cursorKey, setCursorKey] = useState<string | null>(null);
 
   const byOrder = useMemo(() => [...tasks].sort((a, b) => a.order - b.order), [tasks]);
   const [items, setItems] = useState<Task[]>(byOrder);
@@ -231,6 +231,7 @@ export default function Tasks() {
         setList(LISTS[n - 1].key);
       } else if (e.key === "Escape") {
         setSelected(new Set());
+        setCursorKey(null);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -337,6 +338,45 @@ export default function Tasks() {
 
   // Drag reorder only makes sense in the unfiltered, flat "all" view, sorted manually.
   const canReorder = list === "all" && !activeTag && !q && sortBy === "manual";
+
+  // Same order the flat (non-reorder) list view renders in — shared by the JSX below and the
+  // j/k roving-cursor handler so "next visible row" always means the same thing to both.
+  const flatRows = [...rows].sort((a, b) => {
+    if (a.done !== b.done) return Number(a.done) - Number(b.done);
+    return (a.dueDate ?? "￿").localeCompare(b.dueDate ?? "￿");
+  });
+
+  // j/k roving cursor + single-key verbs — only in the flat browsing list (not kanban, not
+  // drag-reorder mode, which have their own interaction models already).
+  useEffect(() => {
+    if (view !== "list" || canReorder) return;
+    const taskByKey = new Map(visible.map((t) => [`t-${t.id}`, t]));
+    const meetingByKey = new Map(visibleMeetings.map((m) => [`m-${m.meeting.id}`, m]));
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName) || el?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || flatRows.length === 0) return;
+      const idx = cursorKey ? flatRows.findIndex((r) => r.key === cursorKey) : -1;
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setCursorKey(flatRows[idx < 0 ? 0 : Math.min(idx + 1, flatRows.length - 1)].key);
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setCursorKey(flatRows[idx < 0 ? 0 : Math.max(idx - 1, 0)].key);
+      } else if (e.key === "x" && cursorKey) {
+        e.preventDefault();
+        const task = taskByKey.get(cursorKey);
+        if (task) handleToggleTask(task);
+        else { const m = meetingByKey.get(cursorKey); if (m) toggleMeeting(m.meeting.id); }
+      } else if ((e.key === "Enter" || e.key === "e") && cursorKey) {
+        const task = taskByKey.get(cursorKey);
+        if (task) { e.preventDefault(); openTask(task); }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, canReorder, flatRows, cursorKey, visible, visibleMeetings]);
 
   function toggleExpanded(id: string) {
     setExpanded((prev) => {
@@ -593,15 +633,9 @@ export default function Tasks() {
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
-              <div className="px-2 py-1.5">
-                <p className="mb-1 text-xs text-muted-foreground">Или выбрать дату</p>
-                <Input
-                  type="date"
-                  className="h-8 text-xs"
-                  value={task.dueDate ?? ""}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => updateTask(task.id, { dueDate: e.target.value || undefined })}
-                />
+              <div className="px-1 py-1" onClick={(e) => e.stopPropagation()}>
+                <p className="mb-1 px-1 text-xs text-muted-foreground">Или выбрать дату</p>
+                <Calendar selected={task.dueDate} onSelect={(d) => updateTask(task.id, { dueDate: d })} />
               </div>
               <DropdownMenuSeparator />
               {isSnoozed(task) ? (
@@ -615,6 +649,9 @@ export default function Tasks() {
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => snooze(task.id, nextMonday())}>
                     <Moon /> Отложить до понедельника
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => snooze(task.id, offsetDate(7))}>
+                    <Moon /> Отложить на неделю
                   </DropdownMenuItem>
                 </>
               )}
@@ -791,15 +828,9 @@ export default function Tasks() {
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
-              <div className="px-2 py-1.5">
-                <p className="mb-1 text-xs text-muted-foreground">Или выбрать дату</p>
-                <Input
-                  type="date"
-                  className="h-8 text-xs"
-                  value={task.dueDate ?? ""}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => updateTask(task.id, { dueDate: e.target.value || undefined })}
-                />
+              <div className="px-1 py-1" onClick={(e) => e.stopPropagation()}>
+                <p className="mb-1 px-1 text-xs text-muted-foreground">Или выбрать дату</p>
+                <Calendar selected={task.dueDate} onSelect={(d) => updateTask(task.id, { dueDate: d })} />
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1189,6 +1220,7 @@ export default function Tasks() {
           description="Добавьте первую задачу. Пишите срок словами — «завтра», «в пятницу» — и он распознается сам."
           actionLabel="Добавить задачу"
           onAction={() => setQuickAddOpen(true)}
+          shortcut="N"
         />
       ) : view === "kanban" ? (
         renderKanban()
@@ -1207,14 +1239,14 @@ export default function Tasks() {
       ) : (
         <div className="flex flex-col gap-2">
           {/* Flat mode: meetings interleave by date so the day still reads in order. */}
-          {[...rows]
-            .sort((a, b) => {
-              if (a.done !== b.done) return Number(a.done) - Number(b.done);
-              return (a.dueDate ?? "￿").localeCompare(b.dueDate ?? "￿");
-            })
-            .map((r) => (
-              <div key={r.key}>{r.node}</div>
-            ))}
+          {flatRows.map((r) => (
+            <div
+              key={r.key}
+              className={cn("rounded-md transition-shadow", r.key === cursorKey && "ring-1 ring-brand/60")}
+            >
+              {r.node}
+            </div>
+          ))}
         </div>
       )}
 
@@ -1247,6 +1279,10 @@ export default function Tasks() {
             { label: menu.task.done ? "Вернуть в работу" : "Завершить", fn: () => handleToggleTask(menu.task) },
             { label: "Срок: сегодня", fn: () => reschedule(menu.task.id, 0) },
             { label: "Срок: завтра", fn: () => reschedule(menu.task.id, 1) },
+            { label: "Срок: через неделю", fn: () => reschedule(menu.task.id, 7) },
+            // Only offered when there's actually a due date to clear — matches the list-row/kanban
+            // menus' conditional rendering, which this copy previously drifted from (AUDIT.md finding).
+            ...(menu.task.dueDate ? [{ label: "Убрать срок", fn: () => reschedule(menu.task.id, null) }] : []),
             { label: "Сменить приоритет", fn: () => updateTask(menu.task.id, { priority: (((menu.task.priority + 1) % 4) as Task["priority"]) }) },
             { label: "Переименовать", fn: () => startRename(menu.task) },
           ].map((a) => (

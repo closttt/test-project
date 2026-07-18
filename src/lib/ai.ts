@@ -75,9 +75,92 @@ export function isAiConfigured(): boolean {
   return loadAiConfig() !== null;
 }
 
+export interface ToolCallRequest {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /** Present on an assistant message that invoked tools — replayed back so the model has full
+   * context of what it already did when we ask it for the final wrap-up. Typed loosely (not
+   * `ToolCallRequest[]`) on purpose: this must always be the VERBATIM object the API returned,
+   * not a rebuilt copy — some providers (Gemini) attach extra required metadata per call (e.g.
+   * `thought_signature`) that a hand-reconstructed `{id, type, function}` object silently drops,
+   * and Gemini then rejects the follow-up request with a 400. */
+  tool_calls?: unknown[];
+  /** Present on a "tool" message — which call this result answers. */
+  tool_call_id?: string;
+}
+
+export interface ToolDef {
+  type: "function";
+  function: { name: string; description: string; parameters: Record<string, unknown> };
+}
+
+export interface ParsedToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface CompletionResult {
+  /** The assistant's plain-text reply — present when it didn't call a tool. */
+  content?: string;
+  /** Parsed tool calls (for the executor to dispatch), if the model decided to act. */
+  toolCalls?: ParsedToolCall[];
+  /** The EXACT `tool_calls` array from the API response, byte-for-byte — hand this to
+   * `ChatMessage.tool_calls` when replaying the assistant's turn back for the follow-up call.
+   * Never rebuild this from `toolCalls`; see the note on `ChatMessage.tool_calls`. */
+  rawToolCalls?: unknown[];
+}
+
+/**
+ * Non-streaming request — used for the "decide" turn when tools are offered. Tool-call arguments
+ * arrive as one parsed JSON object this way, instead of fragments that would need reassembling
+ * across SSE deltas (the streaming endpoint's tool-call shape varies more across providers).
+ */
+export async function requestCompletion(
+  messages: ChatMessage[],
+  tools: ToolDef[] | undefined,
+  signal?: AbortSignal
+): Promise<CompletionResult> {
+  const cfg = loadAiConfig();
+  if (!cfg) throw new Error("AI не настроен — добавьте ключ в Настройках.");
+
+  const res = await fetch(`${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` },
+    body: JSON.stringify({
+      model: cfg.model,
+      messages,
+      ...(tools && tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
+    }),
+    signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`AI API вернул ${res.status}${text ? `: ${text.slice(0, 300)}` : ""}`);
+  }
+  const json = await res.json();
+  const msg = json.choices?.[0]?.message;
+  if (!msg) throw new Error("AI API вернул пустой ответ.");
+
+  const rawCalls = msg.tool_calls as ToolCallRequest[] | undefined;
+  const toolCalls: ParsedToolCall[] | undefined = rawCalls?.map((c) => {
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(c.function.arguments || "{}");
+    } catch {
+      // Malformed JSON from the model — treat as no arguments; the tool executor validates
+      // required fields itself and reports back, so this degrades to a normal "missing field" error.
+    }
+    return { id: c.id, name: c.function.name, arguments: args };
+  });
+
+  return { content: msg.content ?? undefined, toolCalls, rawToolCalls: rawCalls };
 }
 
 /** Streams assistant text deltas from an OpenAI-compatible /chat/completions endpoint (SSE). */

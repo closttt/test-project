@@ -8,15 +8,28 @@ import { Textarea } from "@/components/ui/textarea";
 import { useData } from "@/store/DataProvider";
 import { useUI } from "@/store/UIProvider";
 import { easeOut } from "@/lib/motion";
-import { isAiConfigured, streamChat, type ChatMessage } from "@/lib/ai";
+import { isAiConfigured, streamChat, requestCompletion, type ChatMessage } from "@/lib/ai";
 import { buildAiContext } from "@/lib/aiContext";
+import { AI_TOOLS, dispatchToolCall, type AiToolContext } from "@/lib/aiTools";
+import { useToast } from "@/store/ToastProvider";
 import { cn } from "@/lib/utils";
 
-const QUICK_PROMPTS = [
-  "Что делать сегодня?",
-  "Разбери просроченные задачи",
-  "Итоги за неделю",
-  "Совет по фокусу",
+/** `prompt` is what actually gets sent; `label` is what the button shows — kept short while the
+ * sent text (for "Спланируй мой день") carries a fuller instruction so the reply is a concrete,
+ * ordered, time-blocked plan instead of generic advice, using exactly the data `buildAiContext`
+ * already exposes (today's tasks with estimates/priority, daily limit, Pomodoro settings). */
+const QUICK_PROMPTS: { label: string; prompt: string }[] = [
+  {
+    label: "Спланируй мой день",
+    prompt:
+      "Спланируй мой день: возьми задачи на сегодня (учитывай оценку времени и приоритет), " +
+      "дневной лимит и параметры помодоро из контекста. Предложи конкретный порядок с промежутками " +
+      "времени (например «10:00–10:25 — …»), закладывая перерывы помодоро между блоками. " +
+      "Если по оценкам суммарно не укладывается в разумный рабочий день — прямо скажи, что перенести.",
+  },
+  { label: "Разбери просроченные задачи", prompt: "Разбери просроченные задачи" },
+  { label: "Итоги за неделю", prompt: "Итоги за неделю" },
+  { label: "Создай задачу «Позвонить клиенту» на завтра", prompt: "Создай задачу «Позвонить клиенту» на завтра" },
 ];
 
 interface Turn {
@@ -28,6 +41,7 @@ interface Turn {
 export function AiAssistant() {
   const ctx = useData();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const { assistantOpen, setAssistantOpen } = useUI();
   const configured = isAiConfigured();
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -59,7 +73,7 @@ export function AiAssistant() {
     setTurns(next);
     setBusy(true);
 
-    const messages: ChatMessage[] = [
+    const baseMessages: ChatMessage[] = [
       { role: "system", content: buildAiContext(ctx) },
       ...turns.map((t): ChatMessage => ({ role: t.role, content: t.text })),
       { role: "user", content: question },
@@ -67,15 +81,51 @@ export function AiAssistant() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const toolCtx: AiToolContext = ctx;
+
+    function setReply(t: string) {
+      setTurns((prev) => {
+        const copy = [...prev];
+        copy[copy.length - 1] = { role: "assistant", text: t };
+        return copy;
+      });
+    }
+
     try {
-      let acc = "";
-      for await (const delta of streamChat(messages, controller.signal)) {
-        acc += delta;
-        setTurns((prev) => {
-          const copy = [...prev];
-          copy[copy.length - 1] = { role: "assistant", text: acc };
-          return copy;
+      // Tools are always offered — the model decides whether the request needs one. This first
+      // call is non-streaming (tool-call arguments arrive as one parsed JSON object, not SSE
+      // fragments); if no tool was needed, its own text is the final answer, shown immediately.
+      const decision = await requestCompletion(baseMessages, AI_TOOLS, controller.signal);
+
+      if (decision.toolCalls && decision.toolCalls.length > 0) {
+        const assistantToolMsg: ChatMessage = {
+          role: "assistant",
+          content: decision.content ?? "",
+          // Verbatim pass-through, not rebuilt — some providers (Gemini) attach required extra
+          // metadata per call (e.g. `thought_signature`) that a hand-reconstructed object drops,
+          // which then makes the follow-up request fail with a 400.
+          tool_calls: decision.rawToolCalls,
+        };
+        const toolResultMsgs: ChatMessage[] = decision.toolCalls.map((call) => {
+          const result = dispatchToolCall(toolCtx, call);
+          // Undo runs through the SAME global stack every manual action uses — an AI-made
+          // change is exactly as safe to make as a manual one (Ctrl+Z or the toast button).
+          if (result.toastLabel) {
+            toast(result.toastLabel, result.undoRun ? { actionLabel: "Вернуть", onAction: result.undoRun } : undefined);
+          }
+          return { role: "tool", tool_call_id: call.id, content: result.resultText };
         });
+
+        let acc = "";
+        for await (const delta of streamChat([...baseMessages, assistantToolMsg, ...toolResultMsgs], controller.signal)) {
+          acc += delta;
+          setReply(acc);
+        }
+        // Some models return an empty wrap-up after using a tool — fall back to the raw results
+        // so the user isn't left staring at a blank bubble despite the action having happened.
+        if (!acc) setReply(toolResultMsgs.map((m) => m.content).join(" "));
+      } else {
+        setReply(decision.content ?? "");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -110,7 +160,7 @@ export function AiAssistant() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">AI-ассистент</p>
-                <p className="truncate text-xs text-muted-foreground">Отвечает по вашим реальным данным</p>
+                <p className="truncate text-xs text-muted-foreground">Может создавать и менять задачи, проекты, заметки</p>
               </div>
               {turns.length > 0 && (
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setTurns([])} title="Очистить">
@@ -140,11 +190,11 @@ export function AiAssistant() {
                     <div className="flex flex-wrap gap-2">
                       {QUICK_PROMPTS.map((p) => (
                         <button
-                          key={p}
-                          onClick={() => send(p)}
+                          key={p.label}
+                          onClick={() => send(p.prompt)}
                           className="rounded-full border border-border px-3 py-1.5 text-xs transition-colors hover:border-brand/50 hover:text-brand"
                         >
-                          {p}
+                          {p.label}
                         </button>
                       ))}
                     </div>

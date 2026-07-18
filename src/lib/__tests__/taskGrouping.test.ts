@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 
-import { bucketOf, groupTasksByTime } from "@/lib/taskGrouping";
+import { bucketOf, groupTasksByTime, isSnoozed } from "@/lib/taskGrouping";
+import { addDays } from "@/lib/format";
 import type { Task } from "@/types";
 
 function task(over: Partial<Task> = {}): Task {
@@ -23,10 +24,11 @@ function task(over: Partial<Task> = {}): Task {
   };
 }
 
+// Uses the same local-day helper as the implementation (taskGrouping.ts itself calls `addDays`) —
+// a bare `d.toISOString().slice(0, 10)` reads the UTC day, which silently diverges from the
+// implementation's correct local-day math within a few hours of local midnight.
 function offset(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return addDays(new Date(), days);
 }
 
 describe("bucketOf", () => {
@@ -72,5 +74,32 @@ describe("groupTasksByTime", () => {
   it("labels the far-future bucket «Позже»", () => {
     const [g] = groupTasksByTime([task({ dueDate: offset(20) })]);
     expect(g.label).toBe("Позже");
+  });
+
+  // Regression: groupTasksByTime previously ignored `snoozedUntil` entirely — a task explicitly
+  // postponed via the snooze menu still cluttered "Сегодня"/"Просрочено" in every date-bucketed
+  // view except the Tasks page's own smart lists (which had their own separate isSnoozed check).
+  it("excludes a snoozed task from every bucket, even if its due date is today/overdue", () => {
+    const snoozedToday = task({ dueDate: offset(0), snoozedUntil: offset(3) });
+    const snoozedOverdue = task({ dueDate: offset(-2), snoozedUntil: offset(1) });
+    const visible = task({ dueDate: offset(0) });
+    const groups = groupTasksByTime([snoozedToday, snoozedOverdue, visible]);
+    const allIds = groups.flatMap((g) => g.items.map((t) => t.id));
+    expect(allIds).toEqual([visible.id]);
+  });
+
+  it("re-includes a task once its snooze date has passed", () => {
+    const noLongerSnoozed = task({ dueDate: offset(0), snoozedUntil: offset(-1) });
+    const groups = groupTasksByTime([noLongerSnoozed]);
+    expect(groups.flatMap((g) => g.items.map((t) => t.id))).toEqual([noLongerSnoozed.id]);
+  });
+});
+
+describe("isSnoozed", () => {
+  it("is true only while snoozedUntil is strictly in the future", () => {
+    expect(isSnoozed(task({ snoozedUntil: offset(1) }))).toBe(true);
+    expect(isSnoozed(task({ snoozedUntil: offset(0) }))).toBe(false);
+    expect(isSnoozed(task({ snoozedUntil: offset(-1) }))).toBe(false);
+    expect(isSnoozed(task({}))).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
+import { getSupabaseClient } from "@/lib/supabase";
 import type { Task } from "@/types";
 
 /**
@@ -14,9 +14,9 @@ import type { Task } from "@/types";
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
 
-export function isPushConfigured(): boolean {
-  return !!VAPID_PUBLIC_KEY && isSupabaseConfigured() && "serviceWorker" in navigator && "PushManager" in window;
-}
+// Re-exported so callers keep one name; the actual (dependency-free) check lives in pushEnv.ts
+// so it can be imported without dragging @supabase/supabase-js along — see that file's docstring.
+export { isPushEnvSet as isPushConfigured } from "@/lib/pushEnv";
 
 /** VAPID keys travel as base64url; PushManager wants raw bytes. */
 function urlBase64ToBytes(base64: string): ArrayBuffer {

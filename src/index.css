@@ -4,32 +4,39 @@
 
 :root,
 .dark {
-  --background: 0 0% 4%;
+  /* Clean neutral near-black, matching the reference set (Retainly, Baked, ar.io, wallet apps):
+     matte surfaces separated by hairline borders, NOT tint/glow. Cards sit a hair above the
+     canvas; the border does the separating. Colour lives only on icons/status, never the chrome. */
+  --background: 0 0% 3.5%;
   --foreground: 0 0% 98%;
-  --card: 0 0% 7%;
+  --card: 0 0% 6%;
   --card-foreground: 0 0% 98%;
   --popover: 0 0% 8%;
   --popover-foreground: 0 0% 98%;
   --primary: 0 0% 98%;
-  --primary-foreground: 0 0% 9%;
-  --secondary: 0 0% 13%;
+  --primary-foreground: 0 0% 8%;
+  --secondary: 0 0% 11%;
   --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 13%;
-  --muted-foreground: 0 0% 63%;
-  --accent: 0 0% 15%;
+  --muted: 0 0% 11%;
+  --muted-foreground: 0 0% 58%;
+  --accent: 0 0% 13%;
   --accent-foreground: 0 0% 98%;
-  --destructive: 0 62% 40%;
+  --destructive: 0 62% 45%;
   --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 16%;
+  --border: 0 0% 13%;
   --input: 0 0% 16%;
-  --ring: 217 91% 60%;
+  --ring: 0 0% 30%;
   --brand: 217 91% 60%;
   --brand-foreground: 0 0% 100%;
   --risk: 4 78% 58%;
-  --risk-foreground: 0 0% 98%;
-  --success: 142 71% 45%;
-  --success-foreground: 0 0% 98%;
+  --risk-foreground: 0 0% 100%;
+  --success: 152 60% 45%;
+  --success-foreground: 0 0% 100%;
   --radius: 0.75rem;
+  /* Whisper-soft elevation — references are near-flat; depth comes from borders, not shadow. */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 2px 8px -2px rgb(0 0 0 / 0.35);
+  --shadow-lg: 0 8px 30px -6px rgb(0 0 0 / 0.5);
 }
 
 .light {
@@ -41,24 +48,27 @@
   --popover-foreground: 0 0% 9%;
   --primary: 0 0% 9%;
   --primary-foreground: 0 0% 98%;
-  --secondary: 0 0% 95%;
+  --secondary: 0 0% 96%;
   --secondary-foreground: 0 0% 9%;
-  --muted: 0 0% 95%;
-  --muted-foreground: 0 0% 40%;
-  --accent: 0 0% 93%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 42%;
+  --accent: 0 0% 94%;
   --accent-foreground: 0 0% 9%;
   --destructive: 0 72% 48%;
   --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 89%;
-  --input: 0 0% 89%;
-  --ring: 217 91% 55%;
+  --border: 0 0% 91%;
+  --input: 0 0% 88%;
+  --ring: 0 0% 65%;
   --brand: 217 91% 52%;
   --brand-foreground: 0 0% 100%;
   --risk: 4 74% 52%;
-  --risk-foreground: 0 0% 98%;
-  --success: 142 68% 38%;
-  --success-foreground: 0 0% 98%;
+  --risk-foreground: 0 0% 100%;
+  --success: 152 60% 38%;
+  --success-foreground: 0 0% 100%;
   --radius: 0.75rem;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 2px 8px -2px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 8px 30px -6px rgb(0 0 0 / 0.12);
 }
 
 * {
@@ -82,9 +92,19 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  /* Faint accent-tinted ambient glow — brand identity, follows the accent color. */
-  background-image: radial-gradient(120% 60% at 100% -10%, hsl(var(--brand) / 0.06), transparent 55%);
-  background-attachment: fixed;
+  /* Flat matte canvas — no ambient glow. The references are dead-flat black; depth comes from
+     hairline borders on lifted surfaces, not from tinted background gradients. */
+}
+
+/* Shared elevation helpers — kept deliberately subtle (see the whisper-soft --shadow-* ramp). */
+.elevated-sm { box-shadow: var(--shadow-sm); }
+.elevated-md { box-shadow: var(--shadow-md); }
+.elevated-lg { box-shadow: var(--shadow-lg); }
+/* Glass surface for sticky/floating chrome: translucent + a plain blur, no saturation punch. */
+.glass {
+  background-color: hsl(var(--background) / 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 /* Own type scale — tighter tracking + calmer line-height on headings/large text. */
