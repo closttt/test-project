@@ -38,7 +38,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: "gemini",
     label: "Gemini (Google AI Studio)",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    defaultModel: "gemini-3.5-flash",
+    defaultModel: "gemini-2.0-flash",
     keyHint: "Ключ из aistudio.google.com → Get API key",
   },
   {
@@ -118,6 +118,52 @@ export interface CompletionResult {
 }
 
 /**
+ * Where chat-completions requests actually go.
+ *
+ * In PRODUCTION we relay through our own same-origin Edge proxy (`/api/ai`, see `api/ai.ts`): the
+ * browser can't reliably call LLM providers directly from the deployed HTTPS site (many block
+ * browser origins → CORS → "Failed to fetch"; an http endpoint is blocked as mixed content), so the
+ * proxy makes the call server-side. In DEV (Vite dev server, no serverless functions) we call the
+ * provider directly. Either way, a network-level failure is converted into an actionable message
+ * instead of the browser's opaque "Failed to fetch".
+ */
+async function chatFetch(
+  cfg: AiConfig,
+  payload: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<Response> {
+  const viaProxy = import.meta.env.PROD;
+
+  if (
+    !viaProxy &&
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    cfg.baseUrl.startsWith("http://")
+  ) {
+    throw new Error("AI-endpoint по http нельзя вызвать с https-сайта (mixed content). Укажите https-endpoint.");
+  }
+
+  const url = viaProxy ? "/api/ai" : `${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`;
+  const headers: Record<string, string> = viaProxy
+    ? { "Content-Type": "application/json" }
+    : { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` };
+  const body = viaProxy
+    ? JSON.stringify({ baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, ...payload })
+    : JSON.stringify(payload);
+
+  try {
+    return await fetch(url, { method: "POST", headers, body, signal });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    throw new Error(
+      "Не удалось подключиться к AI-серверу. Частые причины: endpoint недоступен из браузера (CORS), " +
+      "endpoint по http на https-сайте, локальный endpoint (Ollama) не виден с задеплоенного сайта, " +
+      "или нет сети. Проверьте endpoint и ключ в Настройках."
+    );
+  }
+}
+
+/**
  * Non-streaming request — used for the "decide" turn when tools are offered. Tool-call arguments
  * arrive as one parsed JSON object this way, instead of fragments that would need reassembling
  * across SSE deltas (the streaming endpoint's tool-call shape varies more across providers).
@@ -130,16 +176,11 @@ export async function requestCompletion(
   const cfg = loadAiConfig();
   if (!cfg) throw new Error("AI не настроен — добавьте ключ в Настройках.");
 
-  const res = await fetch(`${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` },
-    body: JSON.stringify({
-      model: cfg.model,
-      messages,
-      ...(tools && tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
-    }),
-    signal,
-  });
+  const res = await chatFetch(
+    cfg,
+    { model: cfg.model, messages, ...(tools && tools.length > 0 ? { tools, tool_choice: "auto" } : {}) },
+    signal
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`AI API вернул ${res.status}${text ? `: ${text.slice(0, 300)}` : ""}`);
@@ -168,12 +209,7 @@ export async function* streamChat(messages: ChatMessage[], signal?: AbortSignal)
   const cfg = loadAiConfig();
   if (!cfg) throw new Error("AI не настроен — добавьте ключ в Настройках.");
 
-  const res = await fetch(`${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` },
-    body: JSON.stringify({ model: cfg.model, messages, stream: true }),
-    signal,
-  });
+  const res = await chatFetch(cfg, { model: cfg.model, messages, stream: true }, signal);
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
     throw new Error(`AI API вернул ${res.status}${text ? `: ${text.slice(0, 300)}` : ""}`);
