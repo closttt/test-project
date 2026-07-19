@@ -27,6 +27,9 @@ import {
   Timer,
   Settings2,
   FolderKanban,
+  ArrowLeftRight,
+  ChevronsRightLeft,
+  ChevronsLeftRight,
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -63,6 +66,7 @@ import { pushUndo } from "@/lib/undoStack";
 import { pushRecent } from "@/lib/recent";
 import { blockingTasks, isBlocked } from "@/lib/dependencies";
 import { isSnoozed } from "@/lib/taskGrouping";
+import { parseNaturalInput } from "@/lib/nlp";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/format";
 import { PRIORITY_META, type Task, type Meeting } from "@/types";
@@ -119,6 +123,15 @@ function offsetDate(days: number): string {
   return addDays(new Date(), days);
 }
 
+const KANBAN_COLLAPSED_KEY = "crm-kanban-collapsed-v1";
+function loadCollapsedCols(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(KANBAN_COLLAPSED_KEY) ?? "[]") as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
 /** Next Monday as YYYY-MM-DD. */
 function nextMonday(): string {
   const d = new Date();
@@ -144,6 +157,7 @@ export default function Tasks() {
     restoreTask,
     reorderTasks,
     updateTask,
+    addTask,
     addSavedView,
     deleteSavedView,
     archiveTask,
@@ -201,7 +215,19 @@ export default function Tasks() {
   const [colRenameDraft, setColRenameDraft] = useState("");
   const [savingView, setSavingView] = useState(false);
   const [addingColumn, setAddingColumn] = useState(false);
+  // Kanban: per-column quick-add drafts + collapsed columns (persisted UI pref).
+  const [colAdd, setColAdd] = useState<Record<string, string>>({});
+  const [collapsedCols, setCollapsedCols] = useState<Set<string>>(() => loadCollapsedCols());
   useEffect(() => saveKanbanColumns(columns), [columns]);
+  useEffect(() => { localStorage.setItem(KANBAN_COLLAPSED_KEY, JSON.stringify([...collapsedCols])); }, [collapsedCols]);
+
+  function toggleColCollapsed(key: string) {
+    setCollapsedCols((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (!menu) return;
@@ -791,9 +817,10 @@ export default function Tasks() {
     );
   }
 
-  function kanbanCard(task: Task) {
+  function kanbanCard(task: Task, col: KanbanCol) {
     const project = allProjects.find((p) => p.id === task.projectId);
     const overdue = !task.done && isOverdue(task.dueDate);
+    const cols = kanbanColumns();
     return (
       <div
         key={task.id}
@@ -802,6 +829,16 @@ export default function Tasks() {
         role="listitem"
         aria-label={`${task.title}. Стрелки влево/вправо — перенести в соседнюю колонку`}
         onDragStart={(e) => e.dataTransfer.setData("text/plain", task.id)}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          // Drop onto a card: reorder within the same column, or move in from another column.
+          const draggedId = e.dataTransfer.getData("text/plain");
+          if (!draggedId || draggedId === task.id) return;
+          e.stopPropagation();
+          const dragged = tasks.find((t) => t.id === draggedId);
+          if (dragged && col.match(dragged)) moveTaskBefore(draggedId, task.id, false);
+          else col.onDrop(draggedId);
+        }}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, task }); }}
         onKeyDown={(e) => {
           if (e.key === "ArrowLeft") { e.preventDefault(); moveTaskByKeyboard(task, -1); }
@@ -817,6 +854,32 @@ export default function Tasks() {
             <span className="shrink-0 text-muted-foreground" title="Заблокировано незавершёнными зависимостями">
               <Lock className="h-3.5 w-3.5" />
             </span>
+          )}
+          {/* Move-to-column menu — the touch-friendly way to move a card where drag doesn't work.
+              Always visible (no hover gate) so it's reachable on mobile. */}
+          {cols.length > 1 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label="Переместить в колонку"
+                  title="Переместить в колонку"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground/50 transition-colors hover:text-foreground"
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <p className="px-2 py-1 text-xs text-muted-foreground">Переместить в…</p>
+                {cols.filter((c) => c.key !== col.key).map((c) => (
+                  <DropdownMenuItem key={c.key} onClick={() => c.onDrop(task.id)}>
+                    {c.dot && <span className="mr-1.5 h-2 w-2 rounded-full" style={{ background: c.dot }} />}
+                    {c.colorClass && <span className={cn("mr-1.5 h-2 w-2 rounded-full", c.colorClass)} />}
+                    {c.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-6 text-xs">
@@ -868,6 +931,8 @@ export default function Tasks() {
     onDrop: (id: string) => void; editable?: boolean;
     /** Custom-board only: DS colour token + WIP cap. */
     colorClass?: string; wipLimit?: number;
+    /** Suppress the per-column quick-add (e.g. the «Готово» column — adding a done task makes no sense). */
+    noAdd?: boolean;
   };
 
   function addColumn(title: string) {
@@ -942,7 +1007,7 @@ export default function Tasks() {
         { key: "nodate", label: "Без срока", match: (t) => !t.done && !t.dueDate, onDrop: (id) => updateTask(id, { dueDate: undefined, done: false }) },
         { key: "today", label: "Сегодня", match: (t) => !t.done && !!t.dueDate && (isToday(t.dueDate) || isOverdue(t.dueDate)), onDrop: (id) => updateTask(id, { dueDate: todayStr(), done: false }) },
         { key: "soon", label: "Скоро", match: (t) => !t.done && isUpcoming(t.dueDate), onDrop: (id) => updateTask(id, { dueDate: offsetDate(7), done: false }) },
-        { key: "done", label: "Готово", dot: "hsl(var(--success))", match: (t) => t.done, onDrop: (id) => { const t = tasks.find((x) => x.id === id); if (t && !t.done) handleToggleTask(t); } },
+        { key: "done", label: "Готово", dot: "hsl(var(--success))", noAdd: true, match: (t) => t.done, onDrop: (id) => { const t = tasks.find((x) => x.id === id); if (t && !t.done) handleToggleTask(t); } },
       ];
     }
     return ([1, 2, 3, 0] as Task["priority"][]).map((p) => ({
@@ -981,10 +1046,44 @@ export default function Tasks() {
             </Button>
           )}
         </div>
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none">
           {cols.map((col) => {
-            const colTasks = base.filter(col.match).sort((a, b) => (a.dueDate ?? "￿").localeCompare(b.dueDate ?? "￿"));
+            // Sort by manual order so drag-to-reorder WITHIN a column is respected (not just moves between).
+            const colTasks = base.filter(col.match).sort((a, b) => a.order - b.order);
             const overWip = !!col.wipLimit && colTasks.length > col.wipLimit;
+
+            // Collapsed: a narrow strip with a vertical label + count; drop still moves a card here.
+            if (collapsedCols.has(col.key)) {
+              return (
+                <div
+                  key={col.key}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { const id = e.dataTransfer.getData("text/plain"); if (id) col.onDrop(id); }}
+                  className={cn(
+                    "flex w-11 shrink-0 snap-start flex-col items-center gap-2 rounded-xl border p-2",
+                    overWip ? "border-risk/40 bg-risk/5" : "border-border bg-secondary/20"
+                  )}
+                >
+                  <button
+                    onClick={() => toggleColCollapsed(col.key)}
+                    aria-label={`Развернуть колонку: ${col.label}`}
+                    title="Развернуть колонку"
+                    className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <ChevronsLeftRight className="h-4 w-4" />
+                  </button>
+                  <span className={cn("text-xs tabular-nums", overWip ? "font-semibold text-risk" : "text-muted-foreground")}>{colTasks.length}</span>
+                  <span
+                    className="min-h-0 flex-1 truncate text-xs font-medium text-muted-foreground"
+                    style={{ writingMode: "vertical-rl" }}
+                    title={col.label}
+                  >
+                    {col.label}
+                  </span>
+                </div>
+              );
+            }
+
             return (
               <div
                 key={col.key}
@@ -998,7 +1097,7 @@ export default function Tasks() {
                   if (id) col.onDrop(id);
                 }}
                 className={cn(
-                  "flex min-h-[8rem] w-72 shrink-0 flex-col gap-2 rounded-xl border bg-secondary/20 p-2",
+                  "kanban-col flex min-h-32 shrink-0 snap-start flex-col gap-2 rounded-xl border bg-secondary/20 p-2",
                   overWip ? "border-risk/40 bg-risk/5" : "border-border",
                   col.editable && "cursor-grab active:cursor-grabbing"
                 )}
@@ -1036,6 +1135,14 @@ export default function Tasks() {
                   >
                     {colTasks.length}{col.wipLimit ? `/${col.wipLimit}` : ""}
                   </span>
+                  <button
+                    onClick={() => toggleColCollapsed(col.key)}
+                    aria-label={`Свернуть колонку: ${col.label}`}
+                    title="Свернуть колонку"
+                    className="shrink-0 rounded p-0.5 text-muted-foreground/50 transition-colors hover:text-foreground"
+                  >
+                    <ChevronsRightLeft className="h-3.5 w-3.5" />
+                  </button>
                   {col.editable && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -1096,13 +1203,27 @@ export default function Tasks() {
                   )}
                 </div>
                 <div role="list" className="flex flex-col gap-2">
-                  {colTasks.map(kanbanCard)}
+                  {colTasks.map((t) => kanbanCard(t, col))}
                   {colTasks.length === 0 && (
                     <p className="rounded-lg border border-dashed border-border px-1 py-6 text-center text-xs text-muted-foreground">
-                      Перетащите сюда
+                      Перетащите сюда или добавьте ↓
                     </p>
                   )}
                 </div>
+                {/* Per-column quick-add — create a card straight into this column (with the column's
+                    property applied), no dragging. Hidden on «Готово». */}
+                {!col.noAdd && (
+                  <div className="flex items-center gap-1.5 rounded-md px-1.5 py-1">
+                    <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+                    <input
+                      value={colAdd[col.key] ?? ""}
+                      onChange={(e) => setColAdd((m) => ({ ...m, [col.key]: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") addToColumn(col, colAdd[col.key] ?? ""); }}
+                      placeholder="Карточка…"
+                      className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1112,14 +1233,76 @@ export default function Tasks() {
   }
 
   /**
+   * Free drag-reorder in the "По проектам" list: drop a task onto another row to place it just
+   * before that row in the global manual order, adopting the target's project — so you can move a
+   * task into a project, out to the loose list, or just resequence within a group, all by dragging.
+   * Reordering the whole active list keeps every other task's relative order intact.
+   */
+  function moveTaskBefore(draggedId: string, targetId: string, adoptProject = true) {
+    if (draggedId === targetId) return;
+    const globalOrder = [...tasks].sort((a, b) => a.order - b.order);
+    const dragged = globalOrder.find((t) => t.id === draggedId);
+    const target = globalOrder.find((t) => t.id === targetId);
+    if (!dragged || !target) return;
+    const without = globalOrder.filter((t) => t.id !== draggedId);
+    const idx = without.findIndex((t) => t.id === targetId);
+    without.splice(idx, 0, dragged);
+    reorderTasks(without.map((t) => t.id));
+    // In the list, dragging across groups moves the task into the target's project. In kanban,
+    // reordering within a column must NOT change the project (the column property is what matters).
+    if (adoptProject && (dragged.projectId ?? "") !== (target.projectId ?? "")) {
+      updateTask(draggedId, { projectId: target.projectId });
+    }
+  }
+
+  /** Kanban quick-add: create a task (with NLP parsing) and drop it straight into the column. */
+  function addToColumn(col: KanbanCol, raw: string) {
+    const title = raw.trim();
+    if (!title) return;
+    const parsed = parseNaturalInput(title);
+    const id = addTask({
+      title: parsed.title.trim() || title,
+      done: false,
+      dueDate: parsed.dueDate,
+      tags: parsed.tags,
+      important: parsed.important,
+      remindAt: parsed.remindAt,
+      estimateMin: parsed.estimateMin,
+      recurrence: parsed.recurrence,
+    });
+    col.onDrop(id);
+    setColAdd((m) => ({ ...m, [col.key]: "" }));
+  }
+
+  /** A task row wrapped as a free drag source + drop target for reordering (used by "По проектам"). */
+  function draggableTaskRow(task: Task) {
+    return (
+      <div
+        key={task.id}
+        draggable
+        onDragStart={(e) => e.dataTransfer.setData("application/x-task-reorder", task.id)}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          const id = e.dataTransfer.getData("application/x-task-reorder");
+          if (id) { e.stopPropagation(); moveTaskBefore(id, task.id); }
+        }}
+        className="cursor-grab active:cursor-grabbing"
+      >
+        {renderRow(task, false)}
+      </div>
+    );
+  }
+
+  /**
    * "По проектам" layout — loose (project-less) tasks + meetings shown directly, then each project
    * with ≥1 matching task as a collapsible header (name · done/total · open →). Keeps the list
    * compact instead of dumping 100+ project tasks flat; expand a project to see its tasks.
+   * Task rows are freely drag-reorderable (see draggableTaskRow / moveTaskBefore).
    */
   function renderByProject() {
     const standaloneRows = [
-      ...visible.filter((t) => !t.projectId).map((t) => ({ key: `t-${t.id}`, dueDate: t.dueDate, done: t.done, node: renderRow(t, false) })),
-      ...visibleMeetings.map((m) => ({ key: `m-${m.meeting.id}`, dueDate: m.dueDate, done: m.done, node: renderMeetingRow(m.meeting) })),
+      ...visible.filter((t) => !t.projectId).map((t) => ({ key: `t-${t.id}`, dueDate: t.dueDate, done: t.done, node: draggableTaskRow(t) })),
+      ...visibleMeetings.map((m) => ({ key: `m-${m.meeting.id}`, dueDate: m.dueDate, done: m.done, node: <div key={`m-${m.meeting.id}`}>{renderMeetingRow(m.meeting)}</div> })),
     ].sort((a, b) => Number(a.done) - Number(b.done) || (a.dueDate ?? "￿").localeCompare(b.dueDate ?? "￿"));
 
     const projectGroups = projects
@@ -1136,9 +1319,7 @@ export default function Tasks() {
 
     return (
       <div className="flex flex-col gap-2">
-        {standaloneRows.map((r) => (
-          <div key={r.key}>{r.node}</div>
-        ))}
+        {standaloneRows.map((r) => r.node)}
 
         {projectGroups.map(({ pr, ptasks }) => {
           const open = expandedProjects.has(pr.id);
@@ -1168,7 +1349,7 @@ export default function Tasks() {
               </div>
               {open && (
                 <div className="flex flex-col gap-2 border-t border-border bg-secondary/20 p-3">
-                  {ptasks.map((t) => renderRow(t, false))}
+                  {ptasks.map((t) => draggableTaskRow(t))}
                 </div>
               )}
             </div>
@@ -1181,7 +1362,7 @@ export default function Tasks() {
   return (
     <AppShell
       title="Задачи"
-      description={`Клик по задаче — открыть · Ctrl+клик — выделить несколько · цифры 1–${LISTS.length} переключают списки`}
+      description={`Клик — открыть · Ctrl+клик — выделить · тяните карточку, чтобы менять порядок · 1–${LISTS.length} — списки`}
     >
       {/* Smart lists (list view only) */}
       {view === "list" && (

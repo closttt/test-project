@@ -106,6 +106,10 @@ body {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+/* Kanban column width: near-full-width on mobile (one column per screen + a peek of the next,
+   so you swipe between columns) → a fixed 18rem on tablet/desktop. */
+.kanban-col { width: 82vw; max-width: 20rem; }
+@media (min-width: 640px) { .kanban-col { width: 18rem; max-width: none; } }
 
 /* Own type scale — tighter tracking + calmer line-height on headings/large text. */
 h1, h2, h3, .text-2xl, .text-xl, .text-lg {
