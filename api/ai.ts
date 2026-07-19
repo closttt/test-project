@@ -1,33 +1,30 @@
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+
 /**
- * Same-origin AI proxy (Vercel Edge Function).
+ * Same-origin AI proxy (Vercel Node.js Serverless Function).
  *
- * The browser cannot call most LLM providers directly from the deployed HTTPS site: providers
+ * The browser can't reliably call LLM providers directly from the deployed HTTPS site: providers
  * often don't send CORS headers for browser origins ("Failed to fetch"), and an http endpoint is
- * blocked as mixed content on an https page. This function relays the request server-side (no CORS,
- * no mixed-content restriction) so the assistant works in production.
+ * blocked as mixed content. This relays the request server-side so the assistant works in prod.
  *
- * The user's API key is sent from the browser in the request body and forwarded upstream — it is
- * never stored or logged here; this function only pipes the request through.
+ * Runs on the Node runtime (not Edge): the Edge runtime's outbound fetch was throwing
+ * "Network connection lost" for provider calls; Node's undici fetch is stable for this.
  *
- * Edge runtime is used so streaming (SSE) responses pass straight through to the client.
+ * The user's API key arrives in the request body and is forwarded upstream — never stored or
+ * logged here; this function only pipes the request through. Response body (JSON for the decide
+ * turn, SSE for the streamed wrap-up) is piped straight back.
  */
-export const config = { runtime: "edge" };
-
-export default async function handler(req: Request): Promise<Response> {
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    res.status(405).json({ error: "Method not allowed" });
+    return;
   }
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return json({ error: "Некорректный JSON запроса." }, 400);
-  }
-
-  const { baseUrl, apiKey, ...payload } = body ?? {};
+  const body = (typeof req.body === "string" ? safeParse(req.body) : req.body) ?? {};
+  const { baseUrl, apiKey, ...payload } = body as Record<string, unknown>;
   if (typeof baseUrl !== "string" || !baseUrl || typeof apiKey !== "string" || !apiKey) {
-    return json({ error: "Не передан baseUrl или apiKey." }, 400);
+    res.status(400).json({ error: "Не передан baseUrl или apiKey." });
+    return;
   }
 
   let upstream: Response;
@@ -38,19 +35,38 @@ export default async function handler(req: Request): Promise<Response> {
       body: JSON.stringify(payload),
     });
   } catch (e) {
-    return json(
-      { error: `Прокси не смог достучаться до AI-сервера: ${e instanceof Error ? e.message : String(e)}` },
-      502
-    );
+    res.status(502).json({
+      error: `Прокси не смог достучаться до AI-сервера: ${e instanceof Error ? e.message : String(e)}`,
+    });
+    return;
   }
 
-  // Pipe status + body straight through — JSON for the decide turn, SSE stream for the wrap-up.
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
-  });
+  res.status(upstream.status);
+  res.setHeader("Content-Type", upstream.headers.get("Content-Type") ?? "application/json");
+
+  if (!upstream.body) {
+    res.end();
+    return;
+  }
+
+  // Pipe the upstream stream through — works for a single JSON blob and for token-by-token SSE.
+  const reader = upstream.body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(Buffer.from(value));
+    }
+  } catch {
+    // Upstream connection dropped mid-stream — end with whatever was already sent.
+  }
+  res.end();
 }
 
-function json(obj: unknown, status: number): Response {
-  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
+function safeParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return {};
+  }
 }
