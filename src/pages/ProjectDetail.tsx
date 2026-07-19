@@ -55,6 +55,7 @@ const NO_SECTION = "—";
 type SortMode = "manual" | "date" | "priority";
 
 const statusLabel: Record<ProjectStatus, string> = {
+  planned: "Не начат",
   active: "В работе",
   done: "Завершён",
   archived: "Архив",
@@ -80,7 +81,7 @@ export default function ProjectDetail() {
     updateProject, deleteProject, restoreProject, unarchiveProject,
     addProjectSection, deleteProjectSection, renameProjectSection, reorderProjectSections,
     addProjectComment, deleteProjectComment,
-    addTask, updateTask, toggleTask, deleteTask, restoreTask,
+    addTask, updateTask, toggleTask, deleteTask, restoreTask, reorderTasks,
     addProjectTemplate,
   } = useData();
   const { toast } = useToast();
@@ -89,6 +90,8 @@ export default function ProjectDetail() {
   const [newTaskDate, setNewTaskDate] = useState<string | undefined>(undefined);
   const [dateOpen, setDateOpen] = useState(false);
   const [newSection, setNewSection] = useState("");
+  // Task 7: per-section quick-add drafts, keyed by section name (and "" for the no-section group).
+  const [sectionAdd, setSectionAdd] = useState<Record<string, string>>({});
   const [commentDraft, setCommentDraft] = useState("");
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const [editCommentDraft, setEditCommentDraft] = useState("");
@@ -208,6 +211,47 @@ export default function ProjectDetail() {
     setNewTask("");
     setNewTaskPriority(0);
     setNewTaskDate(undefined);
+  }
+
+  /** Task 7: add a task straight into a specific section (or the no-section group when section=""). */
+  function addTaskToSection(section: string) {
+    const raw = (sectionAdd[section] ?? "").trim();
+    if (!raw) return;
+    const parsed = parseNaturalInput(raw);
+    addTask({
+      title: parsed.title.trim() || raw,
+      done: false,
+      projectId: project!.id,
+      section: section || undefined,
+      priority: 0,
+      dueDate: parsed.dueDate,
+      tags: parsed.tags,
+      important: parsed.important,
+      remindAt: parsed.remindAt,
+      estimateMin: parsed.estimateMin,
+      recurrence: parsed.recurrence,
+    });
+    setSectionAdd((m) => ({ ...m, [section]: "" }));
+  }
+
+  /**
+   * Task 8: manual drag-reorder inside the project. Moves the dragged task to sit right before the
+   * target task in the global order (so it shows in the new spot in «Как есть» mode) and adopts the
+   * target's section. Reordering the full active list keeps every other task's relative order intact.
+   */
+  function moveTaskBefore(draggedId: string, targetId: string) {
+    if (draggedId === targetId) return;
+    const globalOrder = [...tasks].sort((a, b) => a.order - b.order);
+    const dragged = globalOrder.find((t) => t.id === draggedId);
+    const target = globalOrder.find((t) => t.id === targetId);
+    if (!dragged || !target) return;
+    const without = globalOrder.filter((t) => t.id !== draggedId);
+    const idx = without.findIndex((t) => t.id === targetId);
+    without.splice(idx, 0, dragged);
+    reorderTasks(without.map((t) => t.id));
+    if ((dragged.section ?? "") !== (target.section ?? "")) {
+      updateTask(draggedId, { section: target.section });
+    }
   }
 
   function addSection() {
@@ -339,7 +383,14 @@ export default function ProjectDetail() {
         key={t.id}
         draggable
         onDragStart={(e) => e.dataTransfer.setData("application/x-task-id", t.id)}
-        className="group flex cursor-grab items-center gap-2 rounded-md px-1 py-1 active:cursor-grabbing"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          // Reorder within the project: drop a task onto another row to place it just before that row
+          // (and adopt its section). stopPropagation so the section container's move-drop doesn't also fire.
+          const draggedId = e.dataTransfer.getData("application/x-task-id");
+          if (draggedId) { e.stopPropagation(); moveTaskBefore(draggedId, t.id); }
+        }}
+        className="group flex cursor-grab items-center gap-2 rounded-md px-1 py-1 hover:bg-secondary/30 active:cursor-grabbing"
       >
         <AnimatedCheckbox checked={t.done} onChange={() => toggleTask(t.id)} label={t.title} priority={t.priority} />
         <span
@@ -495,6 +546,7 @@ export default function ProjectDetail() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="planned">Не начат</SelectItem>
                         <SelectItem value="active">В работе</SelectItem>
                         <SelectItem value="done">Завершён</SelectItem>
                         <SelectItem value="archived">Архив</SelectItem>
@@ -775,6 +827,9 @@ export default function ProjectDetail() {
                     key={g.name ?? "__none"}
                     className={cn(
                       "flex flex-col gap-1 rounded transition-colors",
+                      // Task 1: clearly detach the no-section tasks from the sectioned ones above
+                      // (extra top space + a dashed divider) so they don't read as part of a section.
+                      g.name === null && sections.length > 0 && "mt-5 border-t-2 border-dashed border-border pt-4",
                       dragOverSection === (g.name ?? "__none") && "bg-brand/5 ring-1 ring-inset ring-brand/40"
                     )}
                     draggable={g.name !== null}
@@ -827,14 +882,34 @@ export default function ProjectDetail() {
                         />
                       </div>
                     )}
+                    {/* Task 1: label the detached no-section group so it's obvious those tasks
+                        aren't part of any section. */}
+                    {g.name === null && sections.length > 0 && (
+                      <p className="mb-0.5 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground/50">
+                        Без секции
+                      </p>
+                    )}
                     {!isCollapsed && (
-                      g.tasks.length === 0 ? (
-                        <p className="px-1 py-1 text-xs text-muted-foreground/60">
-                          {g.name !== null ? "Перетащите сюда задачу или выберите секцию у неё в карточке" : "Пусто"}
-                        </p>
-                      ) : (
-                        g.tasks.map(renderTaskRow)
-                      )
+                      <>
+                        {g.tasks.length === 0 ? (
+                          <p className="px-1 py-1 text-xs text-muted-foreground/60">
+                            {g.name !== null ? "Перетащите сюда задачу или добавьте прямо здесь ↓" : "Пусто"}
+                          </p>
+                        ) : (
+                          g.tasks.map(renderTaskRow)
+                        )}
+                        {/* Task 7: add a task straight into this section (no dragging) */}
+                        <div className="flex items-center gap-2 px-1 pt-0.5">
+                          <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+                          <input
+                            value={sectionAdd[g.name ?? ""] ?? ""}
+                            onChange={(e) => setSectionAdd((m) => ({ ...m, [g.name ?? ""]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === "Enter") addTaskToSection(g.name ?? ""); }}
+                            placeholder={g.name ? `Задача в «${g.name}»…` : "Задача без секции…"}
+                            className="min-w-0 flex-1 bg-transparent py-0.5 text-sm outline-none placeholder:text-muted-foreground/50"
+                          />
+                        </div>
+                      </>
                     )}
                   </div>
                 );

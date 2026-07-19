@@ -1,5 +1,5 @@
 export type ClientStatus = "active" | "negotiation" | "archived";
-export type ProjectStatus = "active" | "done" | "archived";
+export type ProjectStatus = "planned" | "active" | "done" | "archived";
 export type RiskLevel = "none" | "attention" | "risk";
 export type Theme = "dark" | "light";
 export type Recurrence = "none" | "daily" | "weekdays" | "weekly" | "monthly" | "monthly-first-monday";

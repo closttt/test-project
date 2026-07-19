@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, Link } from "react-router-dom";
 import { Reorder, AnimatePresence, motion } from "framer-motion";
 import {
   ChevronDown,
@@ -159,6 +159,19 @@ export default function Tasks() {
   const [list, setList] = useState<SmartList>("all");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Task | null>(null);
+  // Task 3: group the flat list under projects (collapsible) + loose tasks, so 100+ project tasks
+  // don't flood the view. Task 4: filter to only tasks with no project.
+  const [byProject, setByProject] = useState(true);
+  const [onlyNoProject, setOnlyNoProject] = useState(false);
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+
+  function toggleProjectOpen(id: string) {
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
 
   function openTask(task: Task) {
     setEditing(task);
@@ -304,6 +317,7 @@ export default function Tasks() {
     (t) =>
       matchesList(t, list) &&
       (!activeTag || t.tags.includes(activeTag)) &&
+      (!onlyNoProject || !t.projectId) &&
       (!q || t.title.toLowerCase().includes(q))
   );
   // Logbook: completed list newest-first by completion time.
@@ -336,8 +350,9 @@ export default function Tasks() {
     })),
   ];
 
-  // Drag reorder only makes sense in the unfiltered, flat "all" view, sorted manually.
-  const canReorder = list === "all" && !activeTag && !q && sortBy === "manual";
+  // Drag reorder only makes sense in the unfiltered, flat "all" view, sorted manually — not while
+  // grouped by project or filtered to project-less tasks.
+  const canReorder = list === "all" && !activeTag && !q && sortBy === "manual" && !onlyNoProject && !byProject;
 
   // Same order the flat (non-reorder) list view renders in — shared by the JSX below and the
   // j/k roving-cursor handler so "next visible row" always means the same thing to both.
@@ -349,7 +364,7 @@ export default function Tasks() {
   // j/k roving cursor + single-key verbs — only in the flat browsing list (not kanban, not
   // drag-reorder mode, which have their own interaction models already).
   useEffect(() => {
-    if (view !== "list" || canReorder) return;
+    if (view !== "list" || canReorder || byProject) return;
     const taskByKey = new Map(visible.map((t) => [`t-${t.id}`, t]));
     const meetingByKey = new Map(visibleMeetings.map((m) => [`m-${m.meeting.id}`, m]));
     const onKey = (e: KeyboardEvent) => {
@@ -376,7 +391,7 @@ export default function Tasks() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, canReorder, flatRows, cursorKey, visible, visibleMeetings]);
+  }, [view, canReorder, byProject, flatRows, cursorKey, visible, visibleMeetings]);
 
   function toggleExpanded(id: string) {
     setExpanded((prev) => {
@@ -932,7 +947,8 @@ export default function Tasks() {
     }
     return ([1, 2, 3, 0] as Task["priority"][]).map((p) => ({
       key: `p${p}`,
-      label: PRIORITY_META[p].label,
+      // The "no priority" column is our backlog — that's where untriaged tasks live, so name it so.
+      label: p === 0 ? "Бэклог" : PRIORITY_META[p].label,
       dot: PRIORITY_META[p].dot,
       match: (t) => !t.done && t.priority === p,
       onDrop: (id) => updateTask(id, { priority: p }),
@@ -1095,6 +1111,73 @@ export default function Tasks() {
     );
   }
 
+  /**
+   * "По проектам" layout — loose (project-less) tasks + meetings shown directly, then each project
+   * with ≥1 matching task as a collapsible header (name · done/total · open →). Keeps the list
+   * compact instead of dumping 100+ project tasks flat; expand a project to see its tasks.
+   */
+  function renderByProject() {
+    const standaloneRows = [
+      ...visible.filter((t) => !t.projectId).map((t) => ({ key: `t-${t.id}`, dueDate: t.dueDate, done: t.done, node: renderRow(t, false) })),
+      ...visibleMeetings.map((m) => ({ key: `m-${m.meeting.id}`, dueDate: m.dueDate, done: m.done, node: renderMeetingRow(m.meeting) })),
+    ].sort((a, b) => Number(a.done) - Number(b.done) || (a.dueDate ?? "￿").localeCompare(b.dueDate ?? "￿"));
+
+    const projectGroups = projects
+      .map((pr) => ({ pr, ptasks: visible.filter((t) => t.projectId === pr.id) }))
+      .filter((g) => g.ptasks.length > 0);
+
+    if (standaloneRows.length === 0 && projectGroups.length === 0) {
+      return (
+        <div className="rounded-lg border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
+          В этом списке пусто.
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col gap-2">
+        {standaloneRows.map((r) => (
+          <div key={r.key}>{r.node}</div>
+        ))}
+
+        {projectGroups.map(({ pr, ptasks }) => {
+          const open = expandedProjects.has(pr.id);
+          const done = ptasks.filter((t) => t.done).length;
+          return (
+            <div key={pr.id} className="overflow-hidden rounded-xl border border-border">
+              <div className="flex items-center gap-2 p-3">
+                <button
+                  onClick={() => toggleProjectOpen(pr.id)}
+                  aria-label={open ? "Свернуть проект" : "Развернуть проект"}
+                  aria-expanded={open}
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </button>
+                <FolderKanban className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <button className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline" onClick={() => toggleProjectOpen(pr.id)}>
+                  {pr.name}
+                </button>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{done}/{ptasks.length}</span>
+                <Link
+                  to={`/projects/${pr.id}`}
+                  className="shrink-0 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  Открыть →
+                </Link>
+              </div>
+              {open && (
+                <div className="flex flex-col gap-2 border-t border-border bg-secondary/20 p-3">
+                  {ptasks.map((t) => renderRow(t, false))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <AppShell
       title="Задачи"
@@ -1173,6 +1256,10 @@ export default function Tasks() {
                 #{tag}
               </FilterChip>
             ))}
+            {/* Task 4: focus only the loose tasks not attached to any project. */}
+            <FilterChip active={onlyNoProject} onClick={() => setOnlyNoProject((v) => !v)}>
+              Без проекта
+            </FilterChip>
           </div>
           <Segmented
             ariaLabel="Вид задач"
@@ -1183,7 +1270,19 @@ export default function Tasks() {
               { value: "kanban", label: <><LayoutGrid className="h-3.5 w-3.5" /> Канбан</> },
             ]}
           />
-          {view === "list" && list !== "done" && (
+          {/* Task 3: group under projects, or a flat list. */}
+          {view === "list" && (
+            <Segmented
+              ariaLabel="Группировка задач"
+              value={byProject ? "group" : "flat"}
+              onChange={(v) => setByProject(v === "group")}
+              options={[
+                { value: "group", label: <><FolderKanban className="h-3.5 w-3.5" /> По проектам</> },
+                { value: "flat", label: "Плоско" },
+              ]}
+            />
+          )}
+          {view === "list" && !byProject && list !== "done" && (
             <Segmented
               ariaLabel="Сортировка задач"
               value={sortBy}
@@ -1224,6 +1323,8 @@ export default function Tasks() {
         />
       ) : view === "kanban" ? (
         renderKanban()
+      ) : byProject ? (
+        renderByProject()
       ) : visible.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
           В этом списке пусто.

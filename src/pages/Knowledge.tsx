@@ -36,7 +36,7 @@ import type { KnowledgeCard } from "@/types";
 
 const POLL_MS = 60_000;
 type ViewMode = "cards" | "table";
-type SortMode = "newest" | "oldest" | "title";
+type SortMode = "newest" | "oldest" | "title" | "titleDesc" | "image";
 type GroupMode = "date" | "category";
 
 function NotConfigured() {
@@ -184,6 +184,13 @@ export default function Knowledge() {
       .sort((a, b) => {
         if (sortBy === "oldest") return a.createdAt.localeCompare(b.createdAt);
         if (sortBy === "title") return a.title.localeCompare(b.title);
+        if (sortBy === "titleDesc") return b.title.localeCompare(a.title);
+        if (sortBy === "image") {
+          // Cards with a cover first (visual browsing), newest-first within each group.
+          const ai = a.imageUrl ? 0 : 1;
+          const bi = b.imageUrl ? 0 : 1;
+          return ai - bi || b.createdAt.localeCompare(a.createdAt);
+        }
         return b.createdAt.localeCompare(a.createdAt);
       });
   }, [cards, q, activeTag, sortBy]);
@@ -376,6 +383,8 @@ export default function Knowledge() {
                     { value: "newest", label: "Новые" },
                     { value: "oldest", label: "Старые" },
                     { value: "title", label: "А-Я" },
+                    { value: "titleDesc", label: "Я-А" },
+                    { value: "image", label: "С фото", title: "Сначала карточки с изображением" },
                   ]}
                 />
               )}

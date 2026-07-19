@@ -39,14 +39,18 @@ import { spring } from "@/lib/motion";
 import type { ProjectStatus, Priority } from "@/types";
 
 const statusLabel: Record<ProjectStatus, string> = {
+  planned: "Не начат",
   active: "В работе",
   done: "Завершён",
   archived: "Архив",
 };
 
 type StatusFilter = "all" | ProjectStatus;
-type SortMode = "manual" | "name" | "progress" | "tasks" | "health";
+type SortMode = "manual" | "name" | "progress" | "tasks" | "health" | "priority";
 const NO_TEMPLATE = "none";
+
+/** Priority sort rank — high (1) first, «без приоритета» (0) last. */
+const PRIORITY_RANK: Record<number, number> = { 1: 0, 2: 1, 3: 2, 0: 3 };
 
 /** Worst-first: slipping projects float to the top when sorting by health. */
 const HEALTH_RANK: Record<HealthLevel, number> = {
@@ -119,6 +123,7 @@ export default function Projects() {
     if (sortBy === "manual") return filtered;
     return [...filtered].sort((a, b) => {
       if (sortBy === "name") return a.name.localeCompare(b.name);
+      if (sortBy === "priority") return PRIORITY_RANK[a.priority ?? 0] - PRIORITY_RANK[b.priority ?? 0];
       const ta = tasks.filter((t) => t.projectId === a.id);
       const tb = tasks.filter((t) => t.projectId === b.id);
       if (sortBy === "tasks") return tb.length - ta.length;
@@ -157,6 +162,7 @@ export default function Projects() {
               onChange={setFilter}
               options={[
                 { value: "all", label: "Все" },
+                { value: "planned", label: "Не начат" },
                 { value: "active", label: "В работе" },
                 { value: "done", label: "Завершён" },
                 { value: "archived", label: "Архив" },
@@ -168,6 +174,7 @@ export default function Projects() {
               onChange={setSortBy}
               options={[
                 { value: "manual", label: "Как есть", title: "Порядок как есть" },
+                { value: "priority", label: "Приоритет", title: "Сортировать по приоритету: высокий → без приоритета" },
                 { value: "health", label: "Состояние", title: "Сортировать по состоянию: сорвано → на треке" },
                 { value: "name", label: "Имя", title: "Сортировать по имени" },
                 { value: "progress", label: "Прогресс", title: "Сортировать по прогрессу" },
@@ -266,6 +273,7 @@ export default function Projects() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="planned">Не начат</SelectItem>
                     <SelectItem value="active">В работе</SelectItem>
                     <SelectItem value="done">Завершён</SelectItem>
                     <SelectItem value="archived">Архив</SelectItem>
