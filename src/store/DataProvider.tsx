@@ -6,6 +6,7 @@ import type {
   Student,
   Project,
   Task,
+  Subtask,
   Note,
   Meeting,
   Payment,
@@ -95,6 +96,7 @@ interface DataContextValue extends AppData {
   stopTimer: (id: string) => void;
   toggleSubtask: (taskId: string, subtaskId: string) => void;
   addSubtask: (taskId: string, title: string) => void;
+  updateSubtask: (taskId: string, subtaskId: string, patch: Partial<Subtask>) => void;
   deleteSubtask: (taskId: string, subtaskId: string) => void;
   reorderTasks: (orderedIds: string[]) => void;
   deleteTask: (id: string) => void;
@@ -554,6 +556,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           tasks: d.tasks.map((t) =>
             t.id === taskId
               ? { ...t, subtasks: [...t.subtasks, { id: uid(), title: title.trim(), done: false }] }
+              : t
+          ),
+        })),
+      updateSubtask: (taskId, subtaskId, patch) =>
+        setData((d) => ({
+          ...d,
+          tasks: d.tasks.map((t) =>
+            t.id === taskId
+              ? { ...t, subtasks: t.subtasks.map((s) => (s.id === subtaskId ? { ...s, ...patch } : s)) }
               : t
           ),
         })),

@@ -43,7 +43,7 @@ import { cn } from "@/lib/utils";
 import { tagColor, FIXED_TAGS } from "@/lib/tags";
 import { blockingTasks, isBlocked } from "@/lib/dependencies";
 import { saveAttachmentBlob, deleteAttachmentBlob, MAX_ATTACHMENT_BYTES } from "@/lib/attachments";
-import { formatDuration, formatDate, dueLabel, isOverdue, addDays } from "@/lib/format";
+import { formatDuration, formatDate, dueLabel, isOverdue, addDays, todayStr } from "@/lib/format";
 import type { Task, Recurrence, Attachment } from "@/types";
 
 const NO_PROJECT = "none";
@@ -100,7 +100,7 @@ export function TaskEditDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const { tasks, projects, allProjects, settings, toggleTask, updateTask, toggleSubtask, addSubtask, deleteSubtask, addChecklistTemplate, startTimer, stopTimer } = useData();
+  const { tasks, projects, allProjects, settings, toggleTask, updateTask, toggleSubtask, addSubtask, updateSubtask, deleteSubtask, addChecklistTemplate, startTimer, stopTimer } = useData();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Live version from the store so every field updates instantly, same as the row on /tasks.
@@ -370,13 +370,46 @@ export function TaskEditDialog({
               )}
             </div>
           </div>
-          {live.subtasks.map((s) => (
+          {live.subtasks.map((s) => {
+            const subOverdue = !s.done && isOverdue(s.dueDate);
+            return (
             <div key={s.id} className="group flex items-center gap-2">
               <AnimatedCheckbox checked={s.done} onChange={() => toggleSubtask(live.id, s.id)} size="sm" label={s.title} />
               <span className={cn("flex-1 text-sm", s.done && "text-muted-foreground line-through")}>{s.title}</span>
+              {/* Свой срок у подзадачи — с ним она попадает в «Задачи на сегодня» отдельной строкой,
+                  вместо того чтобы тянуть туда всю родительскую задачу целиком. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    title="Срок подзадачи"
+                    className={cn(
+                      "shrink-0 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-secondary",
+                      s.dueDate ? (subOverdue ? "font-medium text-risk" : "text-muted-foreground") : "text-muted-foreground/50"
+                    )}
+                  >
+                    {s.dueDate ? dueLabel(s.dueDate) : "Срок"}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => updateSubtask(live.id, s.id, { dueDate: todayStr() })}>Срок: сегодня</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => updateSubtask(live.id, s.id, { dueDate: addDays(new Date(), 1) })}>Срок: завтра</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => updateSubtask(live.id, s.id, { dueDate: addDays(new Date(), 7) })}>Срок: через неделю</DropdownMenuItem>
+                  {s.dueDate && (
+                    <DropdownMenuItem onClick={() => updateSubtask(live.id, s.id, { dueDate: undefined })}>
+                      <X /> Убрать срок
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <div className="px-1 py-1" onClick={(e) => e.stopPropagation()}>
+                    <p className="mb-1 px-1 text-xs text-muted-foreground">Или выбрать дату</p>
+                    <Calendar selected={s.dueDate} onSelect={(d) => updateSubtask(live.id, s.id, { dueDate: d })} />
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <IconAction icon={X} label={`Удалить подзадачу: ${s.title}`} tone="danger" onClick={() => deleteSubtask(live.id, s.id)} reveal className="p-0.5" />
             </div>
-          ))}
+            );
+          })}
           <div className="flex items-center gap-2">
             <Input
               value={newSub}

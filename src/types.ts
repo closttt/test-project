@@ -129,6 +129,10 @@ export interface Subtask {
   id: string;
   title: string;
   done: boolean;
+  /** Own due date (YYYY-MM-DD). A subtask with a date behaves like a small task: it shows up in
+   * «Задачи на сегодня» on its own, so a parent with 20 subtasks doesn't dump all of them into
+   * today — only the pieces actually scheduled for today appear. */
+  dueDate?: string;
 }
 
 /** 0 = без приоритета, 1 = Высокий, 2 = Средний, 3 = Низкий. */

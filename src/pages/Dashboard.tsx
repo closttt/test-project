@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { CountUp } from "@/components/CountUp";
+import { todaySubtaskRows } from "@/lib/subtasks";
 import { Celebration } from "@/components/Celebration";
 import { PriorityFlag } from "@/components/PriorityFlag";
 import { PriorityPicker } from "@/components/PriorityPicker";
@@ -114,7 +115,7 @@ function Row({ color, label, value }: { color: string; label: string; value: num
 export default function Dashboard() {
   const {
     tasks, meetings, projects, completionLog, gamification, settings,
-    toggleTask, updateTask, addTask, addMeeting, addNote, toggleMeeting,
+    toggleTask, toggleSubtask, updateTask, addTask, addMeeting, addNote, toggleMeeting,
   } = useData();
   const { toast } = useToast();
   const [celebrated, setCelebrated] = useState(false);
@@ -175,8 +176,14 @@ export default function Dashboard() {
     toast(`Перенесено на завтра: ${overLimitIds.size}`);
   }
 
+  // Subtasks with their own date land here individually, so a parent with 20 subtasks doesn't
+  // dump the whole thing into today — only the pieces actually scheduled for today (see lib/subtasks).
+  const todaySubs = todaySubtaskRows(tasks);
   const todayOpen = todayTasks.filter((t) => !t.done).length;
   const todayDone = todayTasks.length - todayOpen;
+  /** Today's plan = dated tasks + dated subtasks. Subtask rows here are always open (done ones are
+   * filtered out), so they only add to the denominator. */
+  const todayTotal = todayTasks.length + todaySubs.length;
   const overdueCount = todayTasks.filter((t) => !t.done && isOverdue(t.dueDate)).length;
 
   const upcomingMeetings = meetings
@@ -263,7 +270,7 @@ export default function Dashboard() {
   function renderWidget(id: string): React.ReactNode {
     switch (id) {
       case "kpi-today":
-        return <Stat icon={ListChecks} label="Задачи сегодня" accent="bg-brand/15 text-brand" value={<span><CountUp value={todayDone} />/<CountUp value={todayTasks.length} /></span>} />;
+        return <Stat icon={ListChecks} label="Задачи сегодня" accent="bg-brand/15 text-brand" value={<span><CountUp value={todayDone} />/<CountUp value={todayTotal} /></span>} />;
       case "kpi-time":
         return <Stat icon={Timer} label="Время сегодня" value={formatDuration(minutesToday)} />;
       case "kpi-open":
@@ -331,13 +338,26 @@ export default function Dashboard() {
                 <Link to="/focus"><Button variant="outline" size="sm" className="h-7">Фокус</Button></Link>
               </div>
             </CardHeader>
-            {todayTasks.length > 0 && (
+            {todayTotal > 0 && (
               <div className="mb-1 px-6">
-                <Progress value={(todayDone / todayTasks.length) * 100} className="h-1" />
+                <Progress value={(todayDone / todayTotal) * 100} className="h-1" />
               </div>
             )}
             <CardContent className="flex flex-1 flex-col gap-1.5 overflow-y-auto">
-              {todayTasks.length === 0 && <p className="text-sm text-muted-foreground">На сегодня задач нет.</p>}
+              {todayTotal === 0 && <p className="text-sm text-muted-foreground">На сегодня задач нет.</p>}
+
+              {/* Подзадачи со своим сроком — отдельными строками, с названием родительской задачи. */}
+              {todaySubs.map(({ parent, sub }) => (
+                <div key={`${parent.id}:${sub.id}`} className="group flex items-center gap-3 rounded-md px-1 py-1 hover:bg-secondary/40">
+                  <AnimatedCheckbox checked={sub.done} onChange={() => toggleSubtask(parent.id, sub.id)} size="sm" label={sub.title} />
+                  <button className="min-w-0 flex-1 truncate text-left text-sm hover:underline" onClick={() => setEditingTask(parent)}>
+                    {sub.title}
+                    <span className="ml-2 text-xs text-muted-foreground">· {parent.title}</span>
+                  </button>
+                  {isOverdue(sub.dueDate) && <span className="shrink-0 text-xs font-medium text-risk">{dueLabel(sub.dueDate!)}</span>}
+                </div>
+              ))}
+
               {todayTasks.map((t) => (
                 <Fragment key={t.id}>
                 {overLimitIds.size > 0 && t.id === firstOverLimitId && (
@@ -571,11 +591,11 @@ export default function Dashboard() {
               <CardTitle className="flex items-center gap-2 text-sm text-muted-foreground">
                 <ListChecks className="h-4 w-4" /> Сегодня · по порядку
               </CardTitle>
-              <span className="text-xs text-muted-foreground">{todayDone}/{todayTasks.length}</span>
+              <span className="text-xs text-muted-foreground">{todayDone}/{todayTotal}</span>
             </CardHeader>
-            {todayTasks.length > 0 && (
+            {todayTotal > 0 && (
               <div className="mb-1 px-6">
-                <Progress value={(todayDone / todayTasks.length) * 100} className="h-1" />
+                <Progress value={(todayDone / todayTotal) * 100} className="h-1" />
               </div>
             )}
             <CardContent className="flex flex-col gap-1.5">
