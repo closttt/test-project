@@ -54,6 +54,8 @@ import {
 import { TaskTag } from "@/components/TaskTag";
 import { EmptyState } from "@/components/EmptyState";
 import { TaskEditDialog } from "@/components/TaskEditDialog";
+import { SubtaskRow } from "@/components/SubtaskRow";
+import { SubtaskEditDialog } from "@/components/SubtaskEditDialog";
 import { PromptDialog } from "@/components/PromptDialog";
 import { PriorityFlag } from "@/components/PriorityFlag";
 import { PriorityPicker } from "@/components/PriorityPicker";
@@ -174,6 +176,8 @@ export default function Tasks() {
   const [list, setList] = useState<SmartList>("all");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Task | null>(null);
+  /** Subtask whose own card is open — a subtask is edited like a small task, not inline only. */
+  const [editingSub, setEditingSub] = useState<{ taskId: string; subId: string } | null>(null);
   // Task 3: group the flat list under projects (collapsible) + loose tasks, so 100+ project tasks
   // don't flood the view. Task 4: filter to only tasks with no project.
   const [byProject, setByProject] = useState(true);
@@ -737,19 +741,14 @@ export default function Tasks() {
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <div className="ml-16 mt-2 flex flex-col gap-1.5 border-l border-border pl-4">
+              <div className="ml-16 mt-2 flex flex-col gap-1 border-l border-border pl-4">
                 {task.subtasks.map((s) => (
-                  <label key={s.id} className="flex items-center gap-2">
-                    <AnimatedCheckbox
-                      checked={s.done}
-                      onChange={() => toggleSubtask(task.id, s.id)}
-                      size="sm"
-                      label={s.title}
-                    />
-                    <span className={s.done ? "text-sm text-muted-foreground line-through" : "text-sm"}>
-                      {s.title}
-                    </span>
-                  </label>
+                  <SubtaskRow
+                    key={s.id}
+                    taskId={task.id}
+                    sub={s}
+                    onOpen={(sub) => setEditingSub({ taskId: task.id, subId: sub.id })}
+                  />
                 ))}
               </div>
             </motion.div>
@@ -1558,6 +1557,14 @@ export default function Tasks() {
       )}
 
       <TaskEditDialog task={editing} open={!!editing} onOpenChange={(v) => !v && setEditing(null)} />
+
+      <SubtaskEditDialog
+        taskId={editingSub?.taskId ?? null}
+        subtaskId={editingSub?.subId ?? null}
+        open={!!editingSub}
+        onOpenChange={(v) => !v && setEditingSub(null)}
+        onOpenParent={(p) => setEditing(p)}
+      />
 
       <PromptDialog
         open={savingView}

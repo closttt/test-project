@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { CountUp } from "@/components/CountUp";
-import { todaySubtaskRows } from "@/lib/subtasks";
+import { todaySubtaskRows, subPriority } from "@/lib/subtasks";
 import { Celebration } from "@/components/Celebration";
 import { PriorityFlag } from "@/components/PriorityFlag";
 import { PriorityPicker } from "@/components/PriorityPicker";
@@ -54,6 +54,7 @@ import { ProjectHealthBadge } from "@/components/ProjectHealthBadge";
 import { projectHealth, type HealthLevel } from "@/lib/projectHealth";
 import { isSnoozed } from "@/lib/taskGrouping";
 import { TaskEditDialog } from "@/components/TaskEditDialog";
+import { SubtaskEditDialog } from "@/components/SubtaskEditDialog";
 import { AreaChart } from "@/components/charts/AreaChart";
 import { DonutGauge } from "@/components/charts/DonutGauge";
 import { useData } from "@/store/DataProvider";
@@ -115,7 +116,7 @@ function Row({ color, label, value }: { color: string; label: string; value: num
 export default function Dashboard() {
   const {
     tasks, meetings, projects, completionLog, gamification, settings,
-    toggleTask, toggleSubtask, updateTask, addTask, addMeeting, addNote, toggleMeeting,
+    toggleTask, toggleSubtask, updateSubtask, updateTask, addTask, addMeeting, addNote, toggleMeeting,
   } = useData();
   const { toast } = useToast();
   const [celebrated, setCelebrated] = useState(false);
@@ -128,6 +129,8 @@ export default function Dashboard() {
   const [openPopup, setOpenPopup] = useState(false);
   const [weekPopup, setWeekPopup] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  /** Dated subtask opened from «Задачи на сегодня» — it gets its own card, like a small task. */
+  const [editingSub, setEditingSub] = useState<{ taskId: string; subId: string } | null>(null);
   const [meetingDialog, setMeetingDialog] = useState(false);
   const [meetingTitle, setMeetingTitle] = useState("");
   const [meetingDate, setMeetingDate] = useState(todayStr());
@@ -346,14 +349,27 @@ export default function Dashboard() {
             <CardContent className="flex flex-1 flex-col gap-1.5 overflow-y-auto">
               {todayTotal === 0 && <p className="text-sm text-muted-foreground">На сегодня задач нет.</p>}
 
-              {/* Подзадачи со своим сроком — отдельными строками, с названием родительской задачи. */}
+              {/* Подзадачи со своим сроком — отдельными строками, с названием родительской задачи.
+                  Клик по названию открывает карточку самой подзадачи, а не родителя. */}
               {todaySubs.map(({ parent, sub }) => (
                 <div key={`${parent.id}:${sub.id}`} className="group flex items-center gap-3 rounded-md px-1 py-1 hover:bg-secondary/40">
-                  <AnimatedCheckbox checked={sub.done} onChange={() => toggleSubtask(parent.id, sub.id)} size="sm" label={sub.title} />
-                  <button className="min-w-0 flex-1 truncate text-left text-sm hover:underline" onClick={() => setEditingTask(parent)}>
+                  <AnimatedCheckbox
+                    checked={sub.done}
+                    onChange={() => toggleSubtask(parent.id, sub.id)}
+                    size="sm"
+                    label={sub.title}
+                    priority={subPriority(sub)}
+                  />
+                  <button
+                    className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
+                    title="Открыть карточку подзадачи"
+                    onClick={() => setEditingSub({ taskId: parent.id, subId: sub.id })}
+                  >
                     {sub.title}
                     <span className="ml-2 text-xs text-muted-foreground">· {parent.title}</span>
                   </button>
+                  {/* Приоритет прямо в строке — как у подзадач в проекте, менять можно не открывая карточку. */}
+                  <PriorityPicker p={subPriority(sub)} onChange={(p) => updateSubtask(parent.id, sub.id, { priority: p })} emptyLabel="•" />
                   {isOverdue(sub.dueDate) && <span className="shrink-0 text-xs font-medium text-risk">{dueLabel(sub.dueDate!)}</span>}
                 </div>
               ))}
@@ -797,6 +813,14 @@ export default function Dashboard() {
       </Dialog>
 
       <TaskEditDialog task={editingTask} open={!!editingTask} onOpenChange={(v) => !v && setEditingTask(null)} />
+
+      <SubtaskEditDialog
+        taskId={editingSub?.taskId ?? null}
+        subtaskId={editingSub?.subId ?? null}
+        open={!!editingSub}
+        onOpenChange={(v) => !v && setEditingSub(null)}
+        onOpenParent={(p) => setEditingTask(p)}
+      />
     </AppShell>
   );
 }

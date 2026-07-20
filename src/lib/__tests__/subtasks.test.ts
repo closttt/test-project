@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { todaySubtaskRows, scheduledSubtaskCount } from "@/lib/subtasks";
+import { todaySubtaskRows, scheduledSubtaskCount, subPriority, dueSubtaskReminders } from "@/lib/subtasks";
 import { todayStr, addDays } from "@/lib/format";
 import type { Task, Subtask } from "@/types";
 
@@ -72,6 +72,64 @@ describe("todaySubtaskRows", () => {
       task("t2", [sub("b", { dueDate: TODAY })]),
     ]);
     expect(rows).toHaveLength(2);
+  });
+
+  it("puts the higher priority first when two pieces share a date", () => {
+    const t = task("t1", [
+      sub("low", { dueDate: TODAY, priority: 3 }),
+      sub("none", { dueDate: TODAY }),
+      sub("high", { dueDate: TODAY, priority: 1 }),
+    ]);
+    expect(todaySubtaskRows([t]).map((r) => r.sub.id)).toEqual(["high", "low", "none"]);
+  });
+
+  it("still sorts by date before priority", () => {
+    const t = task("t1", [
+      sub("today-high", { dueDate: TODAY, priority: 1 }),
+      sub("late-low", { dueDate: YESTERDAY, priority: 3 }),
+    ]);
+    expect(todaySubtaskRows([t]).map((r) => r.sub.id)).toEqual(["late-low", "today-high"]);
+  });
+});
+
+describe("subPriority", () => {
+  it("defaults old data with no priority to 0", () => {
+    expect(subPriority(sub("s"))).toBe(0);
+    expect(subPriority(sub("s", { priority: 1 }))).toBe(1);
+  });
+});
+
+describe("dueSubtaskReminders", () => {
+  const NOW = new Date("2026-07-20T12:00:00").getTime();
+  const HOUR = 60 * 60 * 1000;
+  /** `remindAt` is a LOCAL datetime-local string (YYYY-MM-DDTHH:mm) — not UTC, so build it by hand. */
+  const at = (ms: number) => {
+    const d = new Date(NOW + ms);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+
+  it("returns a subtask whose reminder has just come due", () => {
+    const t = task("t1", [sub("s1", { remindAt: at(-60_000) })]);
+    expect(dueSubtaskReminders([t], NOW, 6 * HOUR).map((r) => r.sub.id)).toEqual(["s1"]);
+  });
+
+  it("skips future, stale, done and undated reminders", () => {
+    const t = task("t1", [
+      sub("future", { remindAt: at(60_000) }),
+      sub("stale", { remindAt: at(-7 * HOUR) }),
+      sub("finished", { remindAt: at(-60_000), done: true }),
+      sub("plain"),
+    ]);
+    expect(dueSubtaskReminders([t], NOW, 6 * HOUR)).toEqual([]);
+  });
+
+  it("stays quiet for a done, archived or snoozed parent", () => {
+    const s = () => [sub("s", { remindAt: at(-60_000) })];
+    const done = task("d", s(), { done: true });
+    const archived = task("a", s(), { archivedAt: "2026-01-02T00:00:00.000Z" });
+    const snoozed = task("z", s(), { snoozedUntil: TOMORROW });
+    expect(dueSubtaskReminders([done, archived, snoozed], NOW, 6 * HOUR)).toEqual([]);
   });
 });
 

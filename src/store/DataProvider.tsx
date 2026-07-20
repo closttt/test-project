@@ -489,7 +489,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                   ...t,
                   dueDate: advanceDate(t.dueDate, t.recurrence),
                   completedAt: new Date().toISOString(),
-                  subtasks: t.subtasks.map((s) => ({ ...s, done: false })),
+                  subtasks: t.subtasks.map((s) => ({ ...s, done: false, completedAt: undefined })),
                 };
               }
               return { ...t, done: !t.done, completedAt: !t.done ? new Date().toISOString() : undefined };
@@ -544,7 +544,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
               ? {
                   ...t,
                   subtasks: t.subtasks.map((s) =>
-                    s.id === subtaskId ? { ...s, done: !s.done } : s
+                    s.id === subtaskId
+                      ? { ...s, done: !s.done, completedAt: !s.done ? new Date().toISOString() : undefined }
+                      : s
                   ),
                 }
               : t

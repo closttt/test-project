@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
 import { hasFired, markFired, fireBrowserNotification } from "@/lib/reminders";
+import { dueSubtaskReminders } from "@/lib/subtasks";
 import { isPushEnvSet } from "@/lib/pushEnv";
 import { isQuietHour } from "@/types";
 
@@ -29,6 +30,16 @@ export function ReminderEngine() {
           toast(`Напоминание: ${t.title}`);
           fireBrowserNotification("Напоминание", t.title);
         }
+      });
+
+      // Subtask reminders — a subtask carries its own remindAt, so a single piece of a big task
+      // can buzz on its own without dragging the whole parent into the notification.
+      dueSubtaskReminders(tasks, now, 6 * HOUR).forEach(({ parent, sub }) => {
+        const key = `sub:${parent.id}:${sub.id}:${sub.remindAt}`;
+        if (hasFired(key)) return;
+        markFired(key);
+        toast(`Напоминание: ${sub.title}`);
+        fireBrowserNotification("Напоминание", `${sub.title} · ${parent.title}`);
       });
 
       // Meetings — remind at start time, within 30 min window. Closed ones stay quiet.

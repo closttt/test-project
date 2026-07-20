@@ -125,6 +125,13 @@ export interface Project {
   createdAt: string;
 }
 
+/**
+ * A subtask is a small task: besides a title it carries its own due date, priority, reminder and
+ * notes, and it opens in its own card (SubtaskEditDialog). What it deliberately does NOT have is
+ * the heavy machinery of a real Task — no project, tags, attachments, timer or recurrence: those
+ * belong to the parent, and duplicating them here would make «подзадача» and «задача» the same
+ * thing with two names.
+ */
 export interface Subtask {
   id: string;
   title: string;
@@ -133,6 +140,14 @@ export interface Subtask {
    * «Задачи на сегодня» on its own, so a parent with 20 subtasks doesn't dump all of them into
    * today — only the pieces actually scheduled for today appear. */
   dueDate?: string;
+  /** Own priority, same 0–3 scale as tasks. Undefined = 0 (без приоритета) for old data. */
+  priority?: Priority;
+  /** Local reminder datetime (YYYY-MM-DDTHH:mm) — fires like a task reminder (see ReminderEngine). */
+  remindAt?: string;
+  /** Free-form notes shown in the subtask card. */
+  description?: string;
+  /** ISO datetime when it was last completed. */
+  completedAt?: string;
 }
 
 /** 0 = без приоритета, 1 = Высокий, 2 = Средний, 3 = Низкий. */

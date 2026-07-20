@@ -37,6 +37,8 @@ import { ProjectHealthBadge } from "@/components/ProjectHealthBadge";
 import { PhotoGallery, saveGalleryFiles, deleteGalleryFile } from "@/components/PhotoGallery";
 import { AttachmentRow } from "@/components/AttachmentRow";
 import { TaskEditDialog } from "@/components/TaskEditDialog";
+import { SubtaskRow } from "@/components/SubtaskRow";
+import { SubtaskEditDialog } from "@/components/SubtaskEditDialog";
 import { PromptDialog } from "@/components/PromptDialog";
 import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
@@ -81,7 +83,7 @@ export default function ProjectDetail() {
     updateProject, deleteProject, restoreProject, unarchiveProject,
     addProjectSection, deleteProjectSection, renameProjectSection, reorderProjectSections,
     addProjectComment, deleteProjectComment,
-    addTask, updateTask, toggleTask, toggleSubtask, deleteTask, restoreTask, reorderTasks,
+    addTask, updateTask, toggleTask, deleteTask, restoreTask, reorderTasks,
     addProjectTemplate,
   } = useData();
   const { toast } = useToast();
@@ -104,6 +106,8 @@ export default function ProjectDetail() {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [dragOverSection, setDragOverSection] = useState<string | null>(null);
   const [editing, setEditing] = useState<Task | null>(null);
+  /** Subtask whose own card is open — same affordance as on the Задачи page. */
+  const [editingSub, setEditingSub] = useState<{ taskId: string; subId: string } | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
@@ -514,10 +518,12 @@ export default function ProjectDetail() {
       {isOpen && t.subtasks.length > 0 && (
         <div className="ml-7 mt-1 flex flex-col gap-1 border-l border-border pl-3">
           {t.subtasks.map((s) => (
-            <label key={s.id} className="flex items-center gap-2 py-0.5">
-              <AnimatedCheckbox checked={s.done} onChange={() => toggleSubtask(t.id, s.id)} size="sm" label={s.title} />
-              <span className={cn("text-sm", s.done && "text-muted-foreground line-through")}>{s.title}</span>
-            </label>
+            <SubtaskRow
+              key={s.id}
+              taskId={t.id}
+              sub={s}
+              onOpen={(sub) => setEditingSub({ taskId: t.id, subId: sub.id })}
+            />
           ))}
         </div>
       )}
@@ -997,6 +1003,14 @@ export default function ProjectDetail() {
       />
 
       <TaskEditDialog task={editing} open={!!editing} onOpenChange={(v) => !v && setEditing(null)} />
+
+      <SubtaskEditDialog
+        taskId={editingSub?.taskId ?? null}
+        subtaskId={editingSub?.subId ?? null}
+        open={!!editingSub}
+        onOpenChange={(v) => !v && setEditingSub(null)}
+        onOpenParent={(p) => setEditing(p)}
+      />
     </AppShell>
   );
 }
