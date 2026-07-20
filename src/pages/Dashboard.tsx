@@ -369,7 +369,7 @@ export default function Dashboard() {
                     <span className="ml-2 text-xs text-muted-foreground">· {parent.title}</span>
                   </button>
                   {/* Приоритет прямо в строке — как у подзадач в проекте, менять можно не открывая карточку. */}
-                  <PriorityPicker p={subPriority(sub)} onChange={(p) => updateSubtask(parent.id, sub.id, { priority: p })} emptyLabel="•" />
+                  <PriorityPicker p={subPriority(sub)} onChange={(p) => updateSubtask(parent.id, sub.id, { priority: p })} />
                   {isOverdue(sub.dueDate) && <span className="shrink-0 text-xs font-medium text-risk">{dueLabel(sub.dueDate!)}</span>}
                 </div>
               ))}

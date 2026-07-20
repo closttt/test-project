@@ -138,7 +138,6 @@ export function SubtaskRow({
       <PriorityPicker
         p={priority}
         onChange={(p) => updateSubtask(taskId, sub.id, { priority: p })}
-        emptyLabel="•"
         className={cn(priority === 0 && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
       />
       <IconAction
