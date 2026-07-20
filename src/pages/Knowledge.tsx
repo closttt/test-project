@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookMarked, ExternalLink, RefreshCw, Search, List, LayoutGrid, Trash2, X, ImageIcon, Link2, FolderTree, CalendarDays } from "lucide-react";
+import { BookMarked, ExternalLink, RefreshCw, Search, List, LayoutGrid, Trash2, X, ImageIcon, Link2, FolderTree, CalendarDays, Plus } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -23,6 +23,7 @@ import { isSupabaseConfigured, fetchKnowledgeCards, deleteKnowledgeCard, updateK
 import { ShimmerSkeleton } from "@/components/unlumen-ui/shimmer-skeleton";
 import { ProgressiveBlur } from "@/components/unlumen-ui/progressive-blur";
 import { extractLinks } from "@/lib/links";
+import { loadLinks, addLinks, removeLink, groupLinksByDomain, type SavedLink } from "@/lib/knowledgeLinks";
 import {
   loadCategoryOverrides,
   setCategoryOverride,
@@ -115,6 +116,24 @@ export default function Knowledge() {
   // Client-side category ("раздел") overrides per card — one level of hierarchy over flat tags.
   const [categories, setCategories] = useState<CategoryOverrides>(() => loadCategoryOverrides());
   const [categoryDraft, setCategoryDraft] = useState("");
+  // «Ссылки» — своя полка для произвольных ссылок, отдельно от карточек из Telegram.
+  const [tab, setTab] = useState<"cards" | "links">("cards");
+  const [savedLinks, setSavedLinks] = useState<SavedLink[]>(() => loadLinks());
+  const [linkDraft, setLinkDraft] = useState("");
+  const [linkTitle, setLinkTitle] = useState("");
+
+  function submitLinks() {
+    const next = addLinks(savedLinks, linkDraft, linkTitle);
+    if (next === savedLinks) {
+      toast("Ссылок не найдено — вставьте адрес, начинающийся с http(s)://");
+      return;
+    }
+    const added = next.length - savedLinks.length;
+    setSavedLinks(next);
+    setLinkDraft("");
+    setLinkTitle("");
+    toast(added === 1 ? "Ссылка добавлена" : `Добавлено ссылок: ${added}`);
+  }
 
   function assignCategory(card: KnowledgeCard, value: string | null) {
     setCategories((prev) => setCategoryOverride(prev, card.id, value));
@@ -307,19 +326,120 @@ export default function Knowledge() {
     );
   }
 
+  /** «Ссылки» — своя полка: вставь одну или несколько ссылок, они группируются по сайту.
+   * Работает независимо от Supabase (хранится локально). */
+  function renderLinksPanel() {
+    const groups = groupLinksByDomain(savedLinks);
+    return (
+      <div className="flex flex-col gap-4">
+        <Card>
+          <CardContent className="flex flex-col gap-2 p-4">
+            <p className="text-sm text-muted-foreground">
+              Складывайте сюда любые ссылки — можно вставить сразу несколько (с новой строки или через пробел).
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                value={linkDraft}
+                onChange={(e) => setLinkDraft(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submitLinks()}
+                placeholder="https://… (можно несколько)"
+                className="sm:flex-1"
+              />
+              <Input
+                value={linkTitle}
+                onChange={(e) => setLinkTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submitLinks()}
+                placeholder="Название (необязательно)"
+                className="sm:w-56"
+              />
+              <Button onClick={submitLinks} disabled={!linkDraft.trim()}>
+                <Plus className="h-4 w-4" /> Добавить
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {savedLinks.length === 0 ? (
+          <EmptyState
+            icon={Link2}
+            title="Ссылок пока нет"
+            description="Вставьте одну или несколько ссылок выше — они сохранятся здесь и сгруппируются по сайту."
+          />
+        ) : (
+          <div className="flex flex-col gap-4">
+            {groups.map((g) => (
+              <div key={g.domain} className="flex flex-col gap-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {g.domain} · {g.links.length}
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {g.links.map((l) => (
+                    <div key={l.id} className="group flex items-center gap-2 rounded-md border border-border px-3 py-2">
+                      <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <a
+                        href={l.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="min-w-0 flex-1 truncate text-sm transition-colors hover:text-brand hover:underline"
+                        title={l.url}
+                      >
+                        {l.title || l.url}
+                      </a>
+                      <span className="shrink-0 text-xs text-muted-foreground">{formatDate(l.createdAt)}</span>
+                      <a
+                        href={l.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 text-muted-foreground transition-colors hover:text-brand"
+                        title="Открыть"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                      <IconAction
+                        icon={X}
+                        label={`Удалить ссылку: ${l.url}`}
+                        tone="danger"
+                        onClick={() => setSavedLinks(removeLink(savedLinks, l.id))}
+                        reveal
+                        className="p-0.5"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <AppShell
       title="База знаний"
-      description="Карточки из Telegram, собранные Hermes Agent"
+      description="Карточки из Telegram + своя полка ссылок"
       actions={
-        configured ? (
+        configured && tab === "cards" ? (
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} /> Обновить
           </Button>
         ) : undefined
       }
     >
-      {!configured ? (
+      <Segmented
+        ariaLabel="Раздел базы знаний"
+        className="mb-4 w-fit"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "cards", label: <><BookMarked className="h-3.5 w-3.5" /> Карточки</> },
+          { value: "links", label: <><Link2 className="h-3.5 w-3.5" /> Ссылки</> },
+        ]}
+      />
+
+      {tab === "links" ? (
+        renderLinksPanel()
+      ) : !configured ? (
         <NotConfigured />
       ) : error ? (
         <Card className="border-risk/30">

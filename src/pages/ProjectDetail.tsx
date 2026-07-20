@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   ArrowLeft, Trash2, Plus, CheckSquare, StickyNote, X,
   ImagePlus, ImageOff, Images, ChevronDown, ChevronRight, GripVertical, MessageSquare, Eye, EyeOff, Save,
-  Paperclip, CalendarClock,
+  Paperclip, CalendarClock, FolderInput,
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -81,7 +81,7 @@ export default function ProjectDetail() {
     updateProject, deleteProject, restoreProject, unarchiveProject,
     addProjectSection, deleteProjectSection, renameProjectSection, reorderProjectSections,
     addProjectComment, deleteProjectComment,
-    addTask, updateTask, toggleTask, deleteTask, restoreTask, reorderTasks,
+    addTask, updateTask, toggleTask, toggleSubtask, deleteTask, restoreTask, reorderTasks,
     addProjectTemplate,
   } = useData();
   const { toast } = useToast();
@@ -100,6 +100,8 @@ export default function ProjectDetail() {
   const [renamingSection, setRenamingSection] = useState<string | null>(null);
   const [sectionDraft, setSectionDraft] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => (id ? loadCollapsed(id) : new Set()));
+  // Which task rows have their subtasks expanded (same affordance as the Задачи page).
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [dragOverSection, setDragOverSection] = useState<string | null>(null);
   const [editing, setEditing] = useState<Task | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
@@ -352,6 +354,14 @@ export default function ProjectDetail() {
     if (rejected) toast(`Файл слишком большой (>${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} МБ): ${rejected}`);
   }
 
+  function toggleTaskExpanded(taskId: string) {
+    setExpandedTasks((prev) => {
+      const next = new Set(prev);
+      next.has(taskId) ? next.delete(taskId) : next.add(taskId);
+      return next;
+    });
+  }
+
   function handleDeleteTask(t: Task) {
     deleteTask(t.id);
     const run = pushUndo("Задача удалена", () => restoreTask(t));
@@ -378,9 +388,10 @@ export default function ProjectDetail() {
   function renderTaskRow(t: Task) {
     const overdue = !t.done && isOverdue(t.dueDate);
     const doneSub = t.subtasks.filter((s) => s.done).length;
+    const isOpen = expandedTasks.has(t.id);
     return (
+      <div key={t.id}>
       <div
-        key={t.id}
         draggable
         onDragStart={(e) => e.dataTransfer.setData("application/x-task-id", t.id)}
         onDragOver={(e) => e.preventDefault()}
@@ -392,6 +403,18 @@ export default function ProjectDetail() {
         }}
         className="group flex cursor-grab items-center gap-2 rounded-md px-1 py-1 hover:bg-secondary/30 active:cursor-grabbing"
       >
+        {t.subtasks.length > 0 ? (
+          <button
+            onClick={() => toggleTaskExpanded(t.id)}
+            aria-label={isOpen ? "Свернуть подзадачи" : "Развернуть подзадачи"}
+            aria-expanded={isOpen}
+            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </button>
+        ) : (
+          <span className="w-4 shrink-0" />
+        )}
         <AnimatedCheckbox checked={t.done} onChange={() => toggleTask(t.id)} label={t.title} priority={t.priority} />
         <span
           className={cn("flex-1 cursor-pointer text-sm hover:underline", t.done && "text-muted-foreground line-through")}
@@ -401,7 +424,13 @@ export default function ProjectDetail() {
           {t.title}
         </span>
         {t.subtasks.length > 0 && (
-          <span className="shrink-0 text-xs text-muted-foreground">{doneSub}/{t.subtasks.length}</span>
+          <button
+            onClick={() => toggleTaskExpanded(t.id)}
+            className="shrink-0 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            title="Показать подзадачи"
+          >
+            {doneSub}/{t.subtasks.length}
+          </button>
         )}
         <PriorityPicker p={t.priority} onChange={(p) => updateTask(t.id, { priority: p })} />
         {t.tags.map((tag) => (
@@ -435,22 +464,42 @@ export default function ProjectDetail() {
             </div>
           </DropdownMenuContent>
         </DropdownMenu>
-        {sections.length > 0 && (
-          <Select
-            value={t.section && sections.includes(t.section) ? t.section : NO_SECTION}
-            onValueChange={(v) => updateTask(t.id, { section: v === NO_SECTION ? undefined : v })}
-          >
-            <SelectTrigger className="h-7 w-32 text-xs opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_SECTION}>Без секции</SelectItem>
-              {sections.map((s) => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
+        {/* Переместить без перетаскивания — секция и/или другой проект. Всегда видно (в т.ч. на тач). */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Переместить задачу: ${t.title}`}
+              title="Переместить (без перетаскивания)"
+              className="shrink-0 rounded p-0.5 text-muted-foreground/50 transition-colors hover:text-foreground"
+            >
+              <FolderInput className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
+            {sections.length > 0 && (
+              <>
+                <p className="px-2 py-1 text-xs text-muted-foreground">В секцию</p>
+                <DropdownMenuItem onClick={() => updateTask(t.id, { section: undefined })}>Без секции</DropdownMenuItem>
+                {sections.map((s) => (
+                  <DropdownMenuItem key={s} onClick={() => updateTask(t.id, { section: s })}>{s}</DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+              </>
+            )}
+            <p className="px-2 py-1 text-xs text-muted-foreground">В проект</p>
+            <DropdownMenuItem onClick={() => updateTask(t.id, { projectId: undefined, section: undefined })}>
+              Без проекта
+            </DropdownMenuItem>
+            {allProjects
+              .filter((p) => !p.archivedAt && p.id !== project!.id)
+              .map((p) => (
+                <DropdownMenuItem key={p.id} onClick={() => updateTask(t.id, { projectId: p.id, section: undefined })}>
+                  {p.name}
+                </DropdownMenuItem>
               ))}
-            </SelectContent>
-          </Select>
-        )}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <IconAction
           icon={Trash2}
           label={`Удалить задачу: ${t.title}`}
@@ -460,6 +509,18 @@ export default function ProjectDetail() {
           className="p-1"
           iconClassName="h-4 w-4"
         />
+      </div>
+      {/* Подзадачи прямо в проекте — раньше их можно было увидеть только внутри карточки задачи. */}
+      {isOpen && t.subtasks.length > 0 && (
+        <div className="ml-7 mt-1 flex flex-col gap-1 border-l border-border pl-3">
+          {t.subtasks.map((s) => (
+            <label key={s.id} className="flex items-center gap-2 py-0.5">
+              <AnimatedCheckbox checked={s.done} onChange={() => toggleSubtask(t.id, s.id)} size="sm" label={s.title} />
+              <span className={cn("text-sm", s.done && "text-muted-foreground line-through")}>{s.title}</span>
+            </label>
+          ))}
+        </div>
+      )}
       </div>
     );
   }

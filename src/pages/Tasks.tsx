@@ -30,6 +30,7 @@ import {
   ArrowLeftRight,
   ChevronsRightLeft,
   ChevronsLeftRight,
+  FolderInput,
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -648,6 +649,30 @@ export default function Tasks() {
               <FolderKanban className="h-3 w-3" /> {project.name}
             </Badge>
           )}
+          {/* Переместить в проект без перетаскивания — всегда доступно, в т.ч. на тач. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                onClick={(e) => e.stopPropagation()}
+                aria-label={`Переместить в проект: ${task.title}`}
+                title="Переместить в проект"
+                className="shrink-0 rounded p-1 text-muted-foreground/50 transition-colors hover:text-foreground"
+              >
+                <FolderInput className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
+              <p className="px-2 py-1 text-xs text-muted-foreground">В проект</p>
+              <DropdownMenuItem onClick={() => updateTask(task.id, { projectId: undefined, section: undefined })}>
+                Без проекта
+              </DropdownMenuItem>
+              {projects.map((p) => (
+                <DropdownMenuItem key={p.id} onClick={() => updateTask(task.id, { projectId: p.id, section: undefined })}>
+                  {p.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
