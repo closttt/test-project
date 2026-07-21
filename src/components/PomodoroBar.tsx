@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { PomodoroSettingsMenu } from "@/components/PomodoroSettingsMenu";
 import { useData } from "@/store/DataProvider";
 import { usePomodoro, phaseLabel, formatClock, type Phase } from "@/store/PomodoroProvider";
+import { creditedMinutes } from "@/lib/pomodoroClock";
 import { easeOut } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -20,13 +21,15 @@ const PHASE_COLOR: Record<Phase, string> = {
 
 /** App-wide floating pomodoro session card. Idle state has no FAB — start it from the bottom dock instead. */
 export function PomodoroBar() {
-  const { phase, running, remaining, total, round, activeTaskId, pause, resume, skip, reset } =
+  const { phase, running, remaining, total, round, activeTaskId, pause, resume, skip, finishEarly } =
     usePomodoro();
   const { allTasks, settings } = useData();
 
   const active = phase !== "idle";
   const task = activeTaskId ? allTasks.find((t) => t.id === activeTaskId) : undefined;
   const pct = total > 0 ? 1 - remaining / total : 0;
+  /** What a «Завершить досрочно» right now would bank — shown so the number is never a surprise. */
+  const elapsedMin = phase === "work" ? creditedMinutes(total - remaining) : 0;
   const color = PHASE_COLOR[phase];
   const rounds = settings.pomodoro.roundsBeforeLong;
 
@@ -84,6 +87,7 @@ export function PomodoroBar() {
               </div>
               <p className="truncate text-xs text-muted-foreground">
                 {task ? task.title : phase === "work" ? "Без задачи" : "Отдохни"}
+                {elapsedMin > 0 && <span className="ml-1.5 tabular-nums">· {elapsedMin} мин</span>}
               </p>
             </div>
 
@@ -101,7 +105,17 @@ export function PomodoroBar() {
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={skip} title="Пропустить фазу">
                 <SkipForward className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-risk" onClick={reset} title="Завершить">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 hover:text-risk"
+                onClick={finishEarly}
+                title={
+                  phase === "work"
+                    ? `Завершить досрочно — записать ${elapsedMin} мин в «${task ? task.title : "фокус"}»`
+                    : "Завершить"
+                }
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>

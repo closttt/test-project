@@ -3,8 +3,18 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
 import { fireBrowserNotification } from "@/lib/reminders";
+import {
+  remainingSec,
+  elapsedSec,
+  creditedMinutes,
+  loadPomodoro,
+  savePomodoro,
+  clearPomodoro,
+  type Phase,
+  type PomodoroSnapshot,
+} from "@/lib/pomodoroClock";
 
-export type Phase = "idle" | "work" | "short" | "long";
+export type { Phase };
 
 interface PomodoroValue {
   phase: Phase;
@@ -22,7 +32,9 @@ interface PomodoroValue {
   resume: () => void;
   /** End the current phase immediately and move to the next. */
   skip: () => void;
-  /** Return to idle, dropping the current phase. */
+  /** Finish now: credit the focus time put in so far, then return to idle. */
+  finishEarly: () => void;
+  /** Return to idle, dropping the current phase (still credits work time — see finishEarly). */
   reset: () => void;
   setActiveTask: (taskId?: string) => void;
 }
@@ -45,13 +57,27 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const cfg = settings.pomodoro;
 
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [running, setRunning] = useState(false);
-  const [remaining, setRemaining] = useState(cfg.workMin * 60);
-  const [total, setTotal] = useState(cfg.workMin * 60);
-  const [round, setRound] = useState(0);
-  const [activeTaskId, setActiveTaskId] = useState<string | undefined>();
-  const startedAtRef = useRef<string>(new Date().toISOString());
+  const idleSnapshot = (): PomodoroSnapshot => ({
+    phase: "idle",
+    running: false,
+    endsAt: null,
+    pausedRemaining: cfg.workMin * 60,
+    total: cfg.workMin * 60,
+    round: 0,
+    activeTaskId: undefined,
+    startedAt: new Date().toISOString(),
+  });
+
+  // Restore a session left running in a closed/reloaded tab — it kept running on the wall clock.
+  const [snap, setSnap] = useState<PomodoroSnapshot>(() => loadPomodoro() ?? idleSnapshot());
+  /** Bumped by the tick so the derived clock repaints; the value itself is just "now". */
+  const [now, setNow] = useState(() => Date.now());
+
+  const remaining = remainingSec(snap, now);
+
+  useEffect(() => {
+    savePomodoro(snap);
+  }, [snap]);
 
   const durationFor = (p: Phase): number => {
     if (p === "short") return cfg.shortBreakMin * 60;
@@ -59,102 +85,139 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     return cfg.workMin * 60;
   };
 
-  function enter(p: Phase, autorun: boolean) {
+  /** Move into a phase, starting its countdown from full length. */
+  function enter(p: Phase, autorun: boolean, patch: Partial<PomodoroSnapshot> = {}) {
     const secs = durationFor(p);
-    setPhase(p);
-    setTotal(secs);
-    setRemaining(secs);
-    setRunning(autorun && p !== "idle");
-    if (p === "work") startedAtRef.current = new Date().toISOString();
+    const run = autorun && p !== "idle";
+    setSnap((s) => ({
+      ...s,
+      phase: p,
+      total: secs,
+      running: run,
+      endsAt: run ? Date.now() + secs * 1000 : null,
+      pausedRemaining: secs,
+      startedAt: p === "work" ? new Date().toISOString() : s.startedAt,
+      ...patch,
+    }));
+    if (p === "idle") clearPomodoro();
   }
 
   /** Credit a work interval (whole minutes) to focus stats + the active task. */
-  function creditWork(elapsedSec: number) {
-    const minutes = Math.round(elapsedSec / 60);
-    if (minutes < 1) return;
+  function creditWork(s: PomodoroSnapshot, elapsed: number) {
+    const minutes = creditedMinutes(elapsed);
+    if (minutes < 1) return 0;
     addPomodoroSession({
       kind: "work",
       minutes,
-      taskId: activeTaskId,
-      startedAt: startedAtRef.current,
+      taskId: s.activeTaskId,
+      startedAt: s.startedAt,
     });
+    return minutes;
   }
 
-  function advanceAfterWork() {
-    const nextRound = round + 1;
-    setRound(nextRound);
+  function advanceAfterWork(s: PomodoroSnapshot) {
+    const nextRound = s.round + 1;
     const long = nextRound % cfg.roundsBeforeLong === 0;
     const next: Phase = long ? "long" : "short";
     toast(long ? "Помодоро готово — большой перерыв 🎉" : "Помодоро готово — перерыв ☕");
     fireBrowserNotification("Фокус завершён", long ? "Большой перерыв" : "Короткий перерыв");
-    enter(next, cfg.autostart);
+    enter(next, cfg.autostart, { round: nextRound });
   }
 
-  // Tick once per second while running; complete the phase at zero.
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => {
-      setRemaining((r) => {
-        if (r > 1) return r - 1;
-        return 0;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [running]);
+  /**
+   * Stop now and bank what was earned. Ending a work phase early still credits the minutes put in —
+   * «Завершить» must never silently erase focus time already spent on the task.
+   */
+  function finishAndCredit() {
+    const minutes = snap.phase === "work" ? creditWork(snap, elapsedSec(snap, Date.now())) : 0;
+    toast(minutes > 0 ? `Записано ${minutes} мин фокуса` : "Помодоро остановлен");
+    setSnap(idleSnapshot());
+    clearPomodoro();
+  }
 
-  // Fire phase completion when the countdown hits zero.
+  /**
+   * The phase ran out. Guarded by a ref because the deadline can be crossed by several sources at
+   * once (tick, visibility change, focus) — without it a single completion could be credited twice.
+   */
+  const completingRef = useRef(false);
   useEffect(() => {
-    if (running && remaining === 0) {
-      if (phase === "work") {
-        creditWork(total);
-        advanceAfterWork();
-      } else {
-        toast("Перерыв окончен — снова в фокус");
-        enter("work", cfg.autostart);
-      }
+    if (!snap.running || remaining > 0 || completingRef.current) return;
+    completingRef.current = true;
+    if (snap.phase === "work") {
+      creditWork(snap, snap.total);
+      advanceAfterWork(snap);
+    } else {
+      toast("Перерыв окончен — снова в фокус");
+      enter("work", cfg.autostart);
     }
+    // Released on the next frame, once the new phase is in state.
+    setTimeout(() => { completingRef.current = false; }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remaining, running]);
+  }, [remaining, snap.running, snap.phase]);
+
+  /**
+   * Repaint the derived clock. This interval carries no state — if the browser throttles it to once
+   * a minute in a background tab (or skips it entirely while the window is minimised), the time
+   * still elapses correctly; only the on-screen number lags until the next tick. Coming back to the
+   * tab recomputes immediately via the visibility/focus listeners below.
+   */
+  useEffect(() => {
+    if (!snap.running) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [snap.running]);
+
+  useEffect(() => {
+    const sync = () => setNow(Date.now());
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("focus", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("focus", sync);
+    };
+  }, []);
 
   const value = useMemo<PomodoroValue>(
     () => ({
-      phase,
-      running,
+      phase: snap.phase,
+      running: snap.running,
       remaining,
-      total,
-      round,
-      activeTaskId,
+      total: snap.total,
+      round: snap.round,
+      activeTaskId: snap.activeTaskId,
       start: (taskId) => {
-        if (taskId !== undefined) setActiveTaskId(taskId);
-        if (phase === "idle") enter("work", true);
-        else setRunning(true);
+        if (snap.phase === "idle") {
+          enter("work", true, taskId !== undefined ? { activeTaskId: taskId } : {});
+        } else {
+          setSnap((s) => ({
+            ...s,
+            running: true,
+            endsAt: Date.now() + s.pausedRemaining * 1000,
+            activeTaskId: taskId !== undefined ? taskId : s.activeTaskId,
+          }));
+        }
       },
-      pause: () => setRunning(false),
-      resume: () => setRunning(true),
+      // Pausing freezes what's left; the deadline is rebuilt from it on resume.
+      pause: () =>
+        setSnap((s) => ({ ...s, running: false, endsAt: null, pausedRemaining: remainingSec(s, Date.now()) })),
+      resume: () =>
+        setSnap((s) => ({ ...s, running: true, endsAt: Date.now() + s.pausedRemaining * 1000 })),
       // Only reachable from the active PomodoroBar (phase !== "idle"), so no idle branch needed.
       skip: () => {
-        if (phase === "work") {
-          creditWork(total - remaining);
-          advanceAfterWork();
+        if (snap.phase === "work") {
+          creditWork(snap, elapsedSec(snap, Date.now()));
+          advanceAfterWork(snap);
         } else {
           enter("work", cfg.autostart);
         }
       },
-      reset: () => {
-        // Ending a work phase early still credits the elapsed minutes — same as skip(),
-        // so "Завершить" can't silently erase focus time that was already put in.
-        if (phase === "work") creditWork(total - remaining);
-        setRound(0);
-        setActiveTaskId(undefined);
-        enter("idle", false);
-        setRemaining(cfg.workMin * 60);
-        setTotal(cfg.workMin * 60);
-      },
-      setActiveTask: (taskId) => setActiveTaskId(taskId),
+      finishEarly: finishAndCredit,
+      reset: finishAndCredit,
+      setActiveTask: (taskId) => setSnap((s) => ({ ...s, activeTaskId: taskId })),
     }),
-    // enter/creditWork/advanceAfterWork close over current state; deps cover the reads.
+    // enter/creditWork/advanceAfterWork close over the current snapshot; deps cover the reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [phase, running, remaining, total, round, activeTaskId, cfg]
+    [snap, remaining, cfg]
   );
 
   return <PomodoroContext.Provider value={value}>{children}</PomodoroContext.Provider>;
