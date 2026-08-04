@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { isSupabaseConfigured, fetchKnowledgeCards, deleteKnowledgeCard, updateKnowledgeCardSource } from "@/lib/supabase";
 import { ShimmerSkeleton } from "@/components/unlumen-ui/shimmer-skeleton";
 import { ProgressiveBlur } from "@/components/unlumen-ui/progressive-blur";
-import { extractLinks, faviconUrl, domainHue } from "@/lib/links";
+import { extractLinks, linkColor, linkMonogram } from "@/lib/links";
 import { loadLinks, addLinks, removeLink, type SavedLink } from "@/lib/knowledgeLinks";
 import {
   loadCategoryOverrides,
@@ -98,31 +98,24 @@ function CardThumb({ url, name }: { url?: string; name: string }) {
   );
 }
 
-/** Saved-link tile: favicon on a per-site tint, with a letter fallback when the favicon 404s. */
-function LinkThumb({ domain }: { domain: string }) {
-  const [broken, setBroken] = useState(false);
-  const hue = domainHue(domain);
-  const tint = `linear-gradient(135deg, hsl(${hue} 55% 50% / 0.20), hsl(${hue} 45% 40% / 0.06))`;
+/**
+ * Saved-link tile visual — generated, no network: a coloured monogram "logo" on a light plate.
+ * The colour comes from the DS palette and cycles by card position, so the grid reads as varied
+ * (red, blue, violet, green…) rather than one flat tint.
+ */
+function LinkThumb({ domain, index }: { domain: string; index: number }) {
+  const c = linkColor(index);
   return (
-    <div className="flex h-20 items-center justify-center" style={{ background: tint }}>
-      {broken ? (
-        <span
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-lg font-semibold text-foreground/80"
-          style={{ background: `hsl(${hue} 45% 45% / 0.25)` }}
-        >
-          {domain.charAt(0).toUpperCase()}
-        </span>
-      ) : (
-        <img
-          src={faviconUrl(domain)}
-          alt=""
-          width={40}
-          height={40}
-          loading="lazy"
-          className="h-10 w-10 rounded-md object-contain"
-          onError={() => setBroken(true)}
-        />
-      )}
+    <div
+      className="flex h-20 items-center justify-center"
+      style={{ background: `linear-gradient(180deg, #ffffff, #eef0f4)` }}
+    >
+      <span
+        className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl font-bold text-white shadow-sm"
+        style={{ background: c.fg }}
+      >
+        {linkMonogram(domain)}
+      </span>
     </div>
   );
 }
@@ -416,7 +409,7 @@ export default function Knowledge() {
             ) : (
               // Бенто: до 6 карточек в ряд на широком экране, плавно вниз к 2 на телефоне.
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-                {visible.map((l) => (
+                {visible.map((l, i) => (
                   <div key={l.id} className="group relative">
                     <a
                       href={l.url}
@@ -425,7 +418,7 @@ export default function Knowledge() {
                       title={l.url}
                       className="block overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-brand/50"
                     >
-                      <LinkThumb domain={l.domain} />
+                      <LinkThumb domain={l.domain} index={i} />
                       <div className="flex flex-col gap-0.5 p-2.5">
                         <p className="truncate text-sm font-medium">{l.title || l.domain}</p>
                         <p className="truncate text-xs text-muted-foreground">{l.domain} · {formatDate(l.createdAt)}</p>

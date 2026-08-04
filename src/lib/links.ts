@@ -26,20 +26,37 @@ export function prettyDomain(url: string): string {
 }
 
 /**
- * A favicon big enough to read as a small logo on a card — enough to recognise the site at a
- * glance. Google's public service (no key, cached on their side, returns a generic globe when a
- * site has none). Browsers still can't fetch a site's OG image cross-origin, so this is the
- * reliable client-only "what is this site" visual.
+ * Generated (no external fetch) card visual for a saved link: a coloured monogram "logo" on a light
+ * plate. Colours are the app's design-system accents; cards cycle through them by position so the
+ * shelf reads as a varied grid (red, blue, violet, green, …) rather than one flat colour.
  */
-export function faviconUrl(domain: string, size = 128): string {
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=${size}`;
+export interface LinkColor {
+  /** Solid fill for the logo tile. */
+  fg: string;
+  /** Soft tint behind the plate, so each card carries a hint of its colour. */
+  soft: string;
 }
 
-/** Stable hue (0–359) derived from a domain — gives each site card its own subtle tint. */
-export function domainHue(domain: string): number {
-  let h = 0;
-  for (let i = 0; i < domain.length; i++) h = (h * 31 + domain.charCodeAt(i)) % 360;
-  return h;
+const LINK_PALETTE: LinkColor[] = [
+  { fg: "hsl(0 72% 51%)", soft: "hsl(0 72% 51% / 0.10)" }, // красный (risk)
+  { fg: "hsl(217 91% 60%)", soft: "hsl(217 91% 60% / 0.10)" }, // синий (brand)
+  { fg: "hsl(262 83% 63%)", soft: "hsl(262 83% 63% / 0.10)" }, // фиолетовый
+  { fg: "hsl(142 71% 42%)", soft: "hsl(142 71% 42% / 0.10)" }, // зелёный (success)
+  { fg: "hsl(25 95% 53%)", soft: "hsl(25 95% 53% / 0.10)" }, // оранжевый
+  { fg: "hsl(347 87% 60%)", soft: "hsl(347 87% 60% / 0.10)" }, // розовый
+  { fg: "hsl(38 92% 50%)", soft: "hsl(38 92% 50% / 0.12)" }, // янтарный
+  { fg: "hsl(189 85% 43%)", soft: "hsl(189 85% 43% / 0.12)" }, // бирюзовый
+];
+
+/** Palette entry for the card at position `i` — cycles so adjacent cards never share a colour. */
+export function linkColor(i: number): LinkColor {
+  return LINK_PALETTE[((i % LINK_PALETTE.length) + LINK_PALETTE.length) % LINK_PALETTE.length];
+}
+
+/** First letter of the domain, for the generated logo. Falls back to "•" for odd inputs. */
+export function linkMonogram(domain: string): string {
+  const m = domain.match(/[a-zA-Zа-яА-Я0-9]/);
+  return (m?.[0] ?? "•").toUpperCase();
 }
 
 /** Every distinct http(s) link in `text`, in first-seen order, trailing punctuation trimmed. */
