@@ -48,21 +48,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  // Bounded so a hung upstream returns a clear message instead of eventually surfacing as
-  // "fetch failed" after the platform kills the function.
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 55_000);
-
+  const reqBody = JSON.stringify(payload);
   let upstream: Response;
   try {
-    upstream = await fetch(target, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
+    upstream = await fetchWithRetry(target, apiKey, reqBody);
   } catch (e) {
-    clearTimeout(timeout);
     if (e instanceof DOMException && e.name === "AbortError") {
       res.status(504).json({ error: "AI-сервер не ответил за 55 с — превышен таймаут. Попробуйте ещё раз или смените модель/провайдера." });
       return;
@@ -74,7 +64,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     });
     return;
   }
-  clearTimeout(timeout);
 
   res.status(upstream.status);
   res.setHeader("Content-Type", upstream.headers.get("Content-Type") ?? "application/json");
@@ -104,6 +93,37 @@ function safeParse(s: string): unknown {
   } catch {
     return {};
   }
+}
+
+/**
+ * POST to the provider, retrying ONCE on a network-level throw. undici occasionally throws a
+ * spurious "fetch failed" on a cold connection (dropped keep-alive, transient DNS/reset); a single
+ * fresh attempt clears most of them. Safe to retry: this call has no side effects — the model only
+ * *decides*; tool actions run client-side afterwards. An HTTP error response (4xx/5xx) is NOT
+ * retried — it's returned so the caller sees the provider's real status. Each attempt is bounded by
+ * its own timeout so a hang can't wedge the function.
+ */
+async function fetchWithRetry(target: URL, apiKey: string, body: string): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 55_000);
+    try {
+      return await fetch(target, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body,
+        signal: controller.signal,
+      });
+    } catch (e) {
+      lastErr = e;
+      // A real timeout is deliberate — don't burn the retry re-hanging for another 55 s.
+      if (e instanceof DOMException && e.name === "AbortError") throw e;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw lastErr;
 }
 
 /** Hosts that resolve to the server itself or a private LAN — never reachable from a deployed proxy. */
