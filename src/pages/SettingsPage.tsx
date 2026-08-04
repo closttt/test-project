@@ -29,7 +29,7 @@ import { collectAttachmentIds, exportAttachmentBlobs, importAttachmentBlobs, typ
 import { requestNotifications, notificationsEnabled, notificationPermission } from "@/lib/reminders";
 import { NAV_ITEMS, loadNavOrder, saveNavOrder, loadNavHidden, saveNavHidden, resetNav } from "@/lib/navConfig";
 import { NAV_CHANGED_EVENT } from "@/components/layout/Sidebar";
-import { PROVIDER_PRESETS, loadAiConfig, saveAiConfig, clearAiConfig, isAiConfigured } from "@/lib/ai";
+import { PROVIDER_PRESETS, loadAiConfig, saveAiConfig, clearAiConfig, isAiConfigured, isLocalOrInsecureEndpoint } from "@/lib/ai";
 import { ACCENTS, type AppData, type Theme, type Accent, type Density, type EffectsLevel } from "@/types";
 
 type ExportRange = "all" | 7 | 30 | 90;
@@ -121,6 +121,12 @@ export default function SettingsPage() {
   const [aiKey, setAiKey] = useState(savedAi?.apiKey ?? "");
   const [showAiKey, setShowAiKey] = useState(false);
   const [aiSaved, setAiSaved] = useState(isAiConfigured());
+  // On the deployed (https) site, an http/localhost endpoint (e.g. Ollama) can't be reached — warn
+  // before it fails with a 400/502. Locally (http dev server) it's fine, so only flag under https.
+  const aiEndpointUnreachable =
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    isLocalOrInsecureEndpoint(aiBaseUrl);
 
   // Every other control on this page applies instantly via updateSettings — this section was the
   // one island of "type it, then remember to press a separate button", so an unsaved key silently
@@ -371,6 +377,16 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
+              {aiEndpointUnreachable && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Этот endpoint (http или локальный, напр. Ollama) недоступен с задеплоенного сайта —
+                    запросы будут падать. Он работает только когда приложение запущено локально.
+                    На онлайн-версии выберите облачный провайдер по https — например Gemini (Google AI Studio).
+                  </span>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <Button size="sm" onClick={saveAi}>Сохранить</Button>
                 {aiSaved && (

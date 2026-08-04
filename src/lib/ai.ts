@@ -75,6 +75,35 @@ export function isAiConfigured(): boolean {
   return loadAiConfig() !== null;
 }
 
+/**
+ * True when this endpoint can't work from the DEPLOYED (https) site: an http:// URL is blocked as
+ * mixed content, and a localhost/private-LAN host (Ollama and the like) isn't reachable from the
+ * server-side proxy either. Such a config only works when the app itself runs locally. Used to warn
+ * in Settings before the user saves something that will just 400/502 in production.
+ */
+export function isLocalOrInsecureEndpoint(baseUrl: string): boolean {
+  const url = baseUrl.trim().toLowerCase();
+  if (!url) return false;
+  if (url.startsWith("http://")) return true;
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return (
+    host === "localhost" ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host.endsWith(".local") ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  );
+}
+
 export interface ToolCallRequest {
   id: string;
   type: "function";
