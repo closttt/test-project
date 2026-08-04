@@ -22,8 +22,8 @@ import { cn } from "@/lib/utils";
 import { isSupabaseConfigured, fetchKnowledgeCards, deleteKnowledgeCard, updateKnowledgeCardSource } from "@/lib/supabase";
 import { ShimmerSkeleton } from "@/components/unlumen-ui/shimmer-skeleton";
 import { ProgressiveBlur } from "@/components/unlumen-ui/progressive-blur";
-import { extractLinks } from "@/lib/links";
-import { loadLinks, addLinks, removeLink, groupLinksByDomain, type SavedLink } from "@/lib/knowledgeLinks";
+import { extractLinks, faviconUrl, domainHue } from "@/lib/links";
+import { loadLinks, addLinks, removeLink, type SavedLink } from "@/lib/knowledgeLinks";
 import {
   loadCategoryOverrides,
   setCategoryOverride,
@@ -98,6 +98,35 @@ function CardThumb({ url, name }: { url?: string; name: string }) {
   );
 }
 
+/** Saved-link tile: favicon on a per-site tint, with a letter fallback when the favicon 404s. */
+function LinkThumb({ domain }: { domain: string }) {
+  const [broken, setBroken] = useState(false);
+  const hue = domainHue(domain);
+  const tint = `linear-gradient(135deg, hsl(${hue} 55% 50% / 0.20), hsl(${hue} 45% 40% / 0.06))`;
+  return (
+    <div className="flex h-20 items-center justify-center" style={{ background: tint }}>
+      {broken ? (
+        <span
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-lg font-semibold text-foreground/80"
+          style={{ background: `hsl(${hue} 45% 45% / 0.25)` }}
+        >
+          {domain.charAt(0).toUpperCase()}
+        </span>
+      ) : (
+        <img
+          src={faviconUrl(domain)}
+          alt=""
+          width={40}
+          height={40}
+          loading="lazy"
+          className="h-10 w-10 rounded-md object-contain"
+          onError={() => setBroken(true)}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function Knowledge() {
   const configured = isSupabaseConfigured();
   const { toast } = useToast();
@@ -121,6 +150,7 @@ export default function Knowledge() {
   const [savedLinks, setSavedLinks] = useState<SavedLink[]>(() => loadLinks());
   const [linkDraft, setLinkDraft] = useState("");
   const [linkTitle, setLinkTitle] = useState("");
+  const [linkQuery, setLinkQuery] = useState("");
 
   function submitLinks() {
     const next = addLinks(savedLinks, linkDraft, linkTitle);
@@ -326,10 +356,13 @@ export default function Knowledge() {
     );
   }
 
-  /** «Ссылки» — своя полка: вставь одну или несколько ссылок, они группируются по сайту.
-   * Работает независимо от Supabase (хранится локально). */
+  /** «Ссылки» — своя полка: вставь одну или несколько ссылок; показываются бенто-сеткой карточек
+   * с превью-иконкой сайта и поиском по названию. Работает локально, независимо от Supabase. */
   function renderLinksPanel() {
-    const groups = groupLinksByDomain(savedLinks);
+    const q = linkQuery.trim().toLowerCase();
+    const visible = q
+      ? savedLinks.filter((l) => `${l.title ?? ""} ${l.domain} ${l.url}`.toLowerCase().includes(q))
+      : savedLinks;
     return (
       <div className="flex flex-col gap-4">
         <Card>
@@ -363,52 +396,54 @@ export default function Knowledge() {
           <EmptyState
             icon={Link2}
             title="Ссылок пока нет"
-            description="Вставьте одну или несколько ссылок выше — они сохранятся здесь и сгруппируются по сайту."
+            description="Вставьте одну или несколько ссылок выше — они сохранятся здесь карточками с превью сайта."
           />
         ) : (
-          <div className="flex flex-col gap-4">
-            {groups.map((g) => (
-              <div key={g.domain} className="flex flex-col gap-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {g.domain} · {g.links.length}
-                </p>
-                <div className="flex flex-col gap-1.5">
-                  {g.links.map((l) => (
-                    <div key={l.id} className="group flex items-center gap-2 rounded-md border border-border px-3 py-2">
-                      <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <a
-                        href={l.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="min-w-0 flex-1 truncate text-sm transition-colors hover:text-brand hover:underline"
-                        title={l.url}
-                      >
-                        {l.title || l.url}
-                      </a>
-                      <span className="shrink-0 text-xs text-muted-foreground">{formatDate(l.createdAt)}</span>
-                      <a
-                        href={l.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="shrink-0 text-muted-foreground transition-colors hover:text-brand"
-                        title="Открыть"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                      <IconAction
-                        icon={X}
-                        label={`Удалить ссылку: ${l.url}`}
-                        tone="danger"
-                        onClick={() => setSavedLinks(removeLink(savedLinks, l.id))}
-                        reveal
-                        className="p-0.5"
-                      />
-                    </div>
-                  ))}
-                </div>
+          <>
+            {/* Поиск по названию/домену — полка растёт, находить нужное одним словом. */}
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={linkQuery}
+                onChange={(e) => setLinkQuery(e.target.value)}
+                placeholder="Поиск по названию…"
+                className="pl-9"
+              />
+            </div>
+
+            {visible.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">Ничего не найдено по «{linkQuery}».</p>
+            ) : (
+              // Бенто: до 6 карточек в ряд на широком экране, плавно вниз к 2 на телефоне.
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                {visible.map((l) => (
+                  <div key={l.id} className="group relative">
+                    <a
+                      href={l.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={l.url}
+                      className="block overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-brand/50"
+                    >
+                      <LinkThumb domain={l.domain} />
+                      <div className="flex flex-col gap-0.5 p-2.5">
+                        <p className="truncate text-sm font-medium">{l.title || l.domain}</p>
+                        <p className="truncate text-xs text-muted-foreground">{l.domain} · {formatDate(l.createdAt)}</p>
+                      </div>
+                    </a>
+                    <IconAction
+                      icon={X}
+                      label={`Удалить ссылку: ${l.url}`}
+                      tone="danger"
+                      onClick={() => setSavedLinks(removeLink(savedLinks, l.id))}
+                      reveal
+                      className="absolute right-1.5 top-1.5 bg-background/80 p-0.5 backdrop-blur"
+                    />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
     );

@@ -25,6 +25,23 @@ export function prettyDomain(url: string): string {
   }
 }
 
+/**
+ * A favicon big enough to read as a small logo on a card — enough to recognise the site at a
+ * glance. Google's public service (no key, cached on their side, returns a generic globe when a
+ * site has none). Browsers still can't fetch a site's OG image cross-origin, so this is the
+ * reliable client-only "what is this site" visual.
+ */
+export function faviconUrl(domain: string, size = 128): string {
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=${size}`;
+}
+
+/** Stable hue (0–359) derived from a domain — gives each site card its own subtle tint. */
+export function domainHue(domain: string): number {
+  let h = 0;
+  for (let i = 0; i < domain.length; i++) h = (h * 31 + domain.charCodeAt(i)) % 360;
+  return h;
+}
+
 /** Every distinct http(s) link in `text`, in first-seen order, trailing punctuation trimmed. */
 export function extractLinks(text: string | undefined): ExtractedLink[] {
   if (!text) return [];
