@@ -18,6 +18,7 @@ import {
   LayoutGrid,
   Check,
   RotateCcw,
+  Trash2,
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -45,6 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { CountUp } from "@/components/CountUp";
+import { IconAction } from "@/components/ui/icon-action";
 import { todaySubtaskRows, subPriority } from "@/lib/subtasks";
 import { Celebration } from "@/components/Celebration";
 import { PriorityFlag } from "@/components/PriorityFlag";
@@ -117,6 +119,7 @@ export default function Dashboard() {
   const {
     tasks, meetings, projects, completionLog, gamification, settings,
     toggleTask, toggleSubtask, updateSubtask, updateTask, addTask, addMeeting, addNote, toggleMeeting,
+    deleteTask, restoreTask,
   } = useData();
   const { toast } = useToast();
   const [celebrated, setCelebrated] = useState(false);
@@ -215,6 +218,12 @@ export default function Dashboard() {
   function handleToggle(id: string, wasOpen: boolean) {
     toggleTask(id);
     if (wasOpen && todayOpen === 1) { setCelebrated(true); setTimeout(() => setCelebrated(false), 1400); }
+  }
+  // Same delete-with-undo as the Задачи page, so removing a task from today's plan is reversible.
+  function handleDeleteTask(task: Task) {
+    deleteTask(task.id);
+    const run = pushUndo("Задача удалена", () => restoreTask(task));
+    toast("Задача удалена", { actionLabel: "Вернуть", onAction: run });
   }
   function addTodayTask() {
     if (!newTask.trim()) return;
@@ -401,6 +410,7 @@ export default function Dashboard() {
                   </span>
                   <PriorityPicker p={t.priority} onChange={(p) => updateTask(t.id, { priority: p })} />
                   {!t.done && isOverdue(t.dueDate) && <span className="text-xs font-medium text-risk">{dueLabel(t.dueDate!)}</span>}
+                  <IconAction icon={Trash2} label={`Удалить задачу: ${t.title}`} tone="danger" onClick={() => handleDeleteTask(t)} reveal className="p-0.5" />
                 </div>
                 </Fragment>
               ))}

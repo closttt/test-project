@@ -91,7 +91,8 @@ function matchesList(t: Task, list: SmartList): boolean {
   if (list === "snoozed") return !t.done && isSnoozed(t);
   if (isSnoozed(t)) return false; // snoozed tasks hide from every other list
   switch (list) {
-    case "all": return true;
+    // "Все" is the working list — done tasks live under "Завершённые", not here.
+    case "all": return !t.done;
     case "today": return !t.done && !!t.dueDate && isToday(t.dueDate);
     case "overdue": return !t.done && isOverdue(t.dueDate);
     case "upcoming": return !t.done && isUpcoming(t.dueDate);
@@ -112,7 +113,7 @@ interface MeetingItem {
 /** Same smart-list rules as tasks, minus the ones meetings can't have (no date, snooze, important). */
 function matchesMeetingList(m: MeetingItem, list: SmartList): boolean {
   switch (list) {
-    case "all": return true;
+    case "all": return !m.done;
     case "today": return !m.done && isToday(m.dueDate);
     case "overdue": return !m.done && isOverdue(m.dueDate);
     case "upcoming": return !m.done && isUpcoming(m.dueDate);

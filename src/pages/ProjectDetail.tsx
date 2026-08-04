@@ -393,11 +393,14 @@ export default function ProjectDetail() {
     const overdue = !t.done && isOverdue(t.dueDate);
     const doneSub = t.subtasks.filter((s) => s.done).length;
     const isOpen = expandedTasks.has(t.id);
+    // Drag-reorder only makes sense in «Как есть»: under date/priority sort the list re-sorts on
+    // every render, so a drop would visibly snap back. Gate dragging on manual, same as /tasks.
+    const canDrag = sortBy === "manual";
     return (
       <div key={t.id}>
       <div
-        draggable
-        onDragStart={(e) => e.dataTransfer.setData("application/x-task-id", t.id)}
+        draggable={canDrag}
+        onDragStart={(e) => canDrag && e.dataTransfer.setData("application/x-task-id", t.id)}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           // Reorder within the project: drop a task onto another row to place it just before that row
@@ -405,7 +408,10 @@ export default function ProjectDetail() {
           const draggedId = e.dataTransfer.getData("application/x-task-id");
           if (draggedId) { e.stopPropagation(); moveTaskBefore(draggedId, t.id); }
         }}
-        className="group flex cursor-grab items-center gap-2 rounded-md px-1 py-1 hover:bg-secondary/30 active:cursor-grabbing"
+        className={cn(
+          "group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-secondary/30",
+          canDrag && "cursor-grab active:cursor-grabbing"
+        )}
       >
         {t.subtasks.length > 0 ? (
           <button
