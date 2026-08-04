@@ -47,11 +47,41 @@ function WikiLink({ name }: { name: string }) {
   );
 }
 
+/**
+ * `::tone Текст::` → a design-system status chip. Tones map onto the same tokens the app's Badge
+ * uses, so a status the assistant writes looks identical to one rendered anywhere else in the CRM.
+ * Aliases are accepted so slight model wording ("red", "high") still lands on the right colour.
+ */
+const BADGE_TONES: Record<string, string> = {
+  risk: "bg-risk/15 text-risk",
+  red: "bg-risk/15 text-risk",
+  high: "bg-risk/15 text-risk",
+  overdue: "bg-risk/15 text-risk",
+  success: "bg-success/15 text-success",
+  green: "bg-success/15 text-success",
+  done: "bg-success/15 text-success",
+  warning: "bg-amber-500/15 text-amber-400",
+  warn: "bg-amber-500/15 text-amber-400",
+  amber: "bg-amber-500/15 text-amber-400",
+  medium: "bg-amber-500/15 text-amber-400",
+  info: "bg-brand/15 text-brand",
+  brand: "bg-brand/15 text-brand",
+  blue: "bg-brand/15 text-brand",
+  low: "bg-brand/15 text-brand",
+  neutral: "bg-secondary text-muted-foreground",
+  muted: "bg-secondary text-muted-foreground",
+};
+
+function badgeClass(tone: string): string {
+  return BADGE_TONES[tone.toLowerCase()] ?? BADGE_TONES.neutral;
+}
+
 function renderInline(text: string, keyBase: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  // Order matters: wiki-links, links, code, bold, italic.
+  // Order matters: badges, wiki-links, links, code, bold, italic. Badge (`::tone text::`) shares
+  // no delimiter with the others, so appending it is safe.
   const pattern =
-    /(\[\[([^\]]+)\]\])|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)/g;
+    /(\[\[([^\]]+)\]\])|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(::(\w+)\s+([^:\n]+?)::)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
@@ -76,6 +106,15 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
       nodes.push(<strong key={key}>{m[9]}</strong>);
     } else if (m[10]) {
       nodes.push(<em key={key}>{m[11]}</em>);
+    } else if (m[12]) {
+      nodes.push(
+        <span
+          key={key}
+          className={`mx-0.5 inline-flex items-center rounded-full px-2 py-0.5 align-middle text-[0.75em] font-medium ${badgeClass(m[13])}`}
+        >
+          {m[14]}
+        </span>
+      );
     }
     last = m.index + m[0].length;
   }
@@ -97,6 +136,7 @@ export function Markdown({
   const blocks: ReactNode[] = [];
   let list: ReactNode[] | null = null;
   let listType: "ul" | "ol" = "ul";
+  let quote: string[] | null = null;
 
   const flushList = (key: string) => {
     if (list) {
@@ -110,6 +150,21 @@ export function Markdown({
     }
   };
 
+  /** Blockquote → a Notion-style callout: accent bar + tinted panel. Good for the reply's takeaway. */
+  const flushQuote = (key: string) => {
+    if (quote) {
+      const q = quote;
+      blocks.push(
+        <blockquote key={key} className="my-1.5 rounded-r border-l-2 border-brand/60 bg-secondary/40 px-3 py-1.5">
+          {q.map((l, i) => (
+            <p key={i} className="text-sm text-foreground/90">{renderInline(l, `${key}-q${i}`)}</p>
+          ))}
+        </blockquote>
+      );
+      quote = null;
+    }
+  };
+
   /** Start (or continue) a list of the given type — switching type flushes the previous one. */
   const openList = (type: "ul" | "ol", idx: number): ReactNode[] => {
     if (list && listType !== type) flushList(`list-${idx}`);
@@ -120,6 +175,15 @@ export function Markdown({
   lines.forEach((raw, idx) => {
     const line = raw.trimEnd();
     const key = `l-${idx}`;
+
+    // Blockquote / callout — consecutive `>` lines fold into one panel.
+    const q = line.match(/^\s*>\s?(.*)$/);
+    if (q) {
+      flushList(`list-${idx}`);
+      (quote ??= []).push(q[1]);
+      return;
+    }
+    if (quote) flushQuote(`quote-${idx}`);
 
     const check = line.match(/^\s*-\s\[( |x|X)\]\s(.*)$/);
     if (check) {
@@ -194,6 +258,7 @@ export function Markdown({
     );
   });
   flushList("list-end");
+  flushQuote("quote-end");
 
   return <div className={className}>{blocks}</div>;
 }
