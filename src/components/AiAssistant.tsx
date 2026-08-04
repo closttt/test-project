@@ -13,6 +13,7 @@ import { buildAiContext } from "@/lib/aiContext";
 import { AI_TOOLS, dispatchToolCall, type AiToolContext } from "@/lib/aiTools";
 import { useToast } from "@/store/ToastProvider";
 import { cn } from "@/lib/utils";
+import { Markdown } from "@/lib/markdown";
 
 /** `prompt` is what actually gets sent; `label` is what the button shows — kept short while the
  * sent text (for "Спланируй мой день") carries a fuller instruction so the reply is a concrete,
@@ -212,10 +213,22 @@ export function AiAssistant() {
                       key={i}
                       className={cn(
                         "max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed",
-                        t.role === "user" ? "ml-auto bg-brand text-brand-foreground" : "whitespace-pre-wrap border border-border bg-secondary/40"
+                        t.role === "user"
+                          ? "ml-auto whitespace-pre-wrap bg-brand text-brand-foreground"
+                          : "border border-border bg-secondary/40"
                       )}
                     >
-                      {t.text || (busy && i === turns.length - 1 ? "…" : "")}
+                      {/* Assistant replies are markdown (headings, bold, lists) — render them formatted,
+                          Notion-style, instead of showing raw ** and * . User text stays verbatim. */}
+                      {t.role === "assistant" ? (
+                        t.text ? (
+                          <Markdown source={t.text} bodyClassName="text-sm text-foreground/90" />
+                        ) : (
+                          <span className="text-muted-foreground">{busy && i === turns.length - 1 ? "…" : ""}</span>
+                        )
+                      ) : (
+                        t.text
+                      )}
                     </div>
                   ))}
                   {error && <p className="text-xs text-risk">{error}</p>}

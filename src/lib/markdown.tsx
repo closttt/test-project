@@ -5,8 +5,8 @@ import { useData } from "@/store/DataProvider";
 
 /**
  * Tiny, safe markdown renderer (no external deps, no dangerouslySetInnerHTML).
- * Supports: #/##/### headings, - / * bullets, - [ ] / - [x] checkboxes,
- * **bold**, *italic*, `code`, [text](url), [[wiki-link]], and paragraph breaks.
+ * Supports: #/##/### headings, - / * bullets, 1. ordered lists, - [ ] / - [x] checkboxes,
+ * **bold**, *italic*, `code`, [text](url), [[wiki-link]], --- rules, and paragraph breaks.
  */
 
 /** [[name]] backlink — resolves to a project or task and navigates on click. */
@@ -83,20 +83,38 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
   return nodes;
 }
 
-export function Markdown({ source, className }: { source: string; className?: string }) {
+export function Markdown({
+  source,
+  className,
+  bodyClassName = "text-sm text-muted-foreground",
+}: {
+  source: string;
+  className?: string;
+  /** Class for plain paragraphs — override to raise body contrast (e.g. in the AI chat bubble). */
+  bodyClassName?: string;
+}) {
   const lines = source.split("\n");
   const blocks: ReactNode[] = [];
   let list: ReactNode[] | null = null;
+  let listType: "ul" | "ol" = "ul";
 
   const flushList = (key: string) => {
     if (list) {
+      const Tag = listType === "ol" ? "ol" : "ul";
       blocks.push(
-        <ul key={key} className="my-1 flex flex-col gap-1 pl-1">
+        <Tag key={key} className="my-1 flex flex-col gap-1 pl-1">
           {list}
-        </ul>
+        </Tag>
       );
       list = null;
     }
+  };
+
+  /** Start (or continue) a list of the given type — switching type flushes the previous one. */
+  const openList = (type: "ul" | "ol", idx: number): ReactNode[] => {
+    if (list && listType !== type) flushList(`list-${idx}`);
+    listType = type;
+    return (list ??= []);
   };
 
   lines.forEach((raw, idx) => {
@@ -105,7 +123,7 @@ export function Markdown({ source, className }: { source: string; className?: st
 
     const check = line.match(/^\s*-\s\[( |x|X)\]\s(.*)$/);
     if (check) {
-      (list ??= []).push(
+      openList("ul", idx).push(
         <li key={key} className="flex items-start gap-2 text-sm">
           <span
             className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border text-[9px] ${
@@ -122,9 +140,20 @@ export function Markdown({ source, className }: { source: string; className?: st
       return;
     }
 
+    const ordered = line.match(/^\s*(\d+)[.)]\s(.*)$/);
+    if (ordered) {
+      openList("ol", idx).push(
+        <li key={key} className="flex items-start gap-2 text-sm">
+          <span className="mt-0.5 shrink-0 tabular-nums font-medium text-muted-foreground">{ordered[1]}.</span>
+          <span>{renderInline(ordered[2], key)}</span>
+        </li>
+      );
+      return;
+    }
+
     const bullet = line.match(/^\s*[-*]\s(.*)$/);
     if (bullet) {
-      (list ??= []).push(
+      openList("ul", idx).push(
         <li key={key} className="flex items-start gap-2 text-sm">
           <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" />
           <span>{renderInline(bullet[1], key)}</span>
@@ -133,7 +162,7 @@ export function Markdown({ source, className }: { source: string; className?: st
       return;
     }
 
-    flushList(`ul-${idx}`);
+    flushList(`list-${idx}`);
 
     const h = line.match(/^(#{1,3})\s(.*)$/);
     if (h) {
@@ -147,18 +176,24 @@ export function Markdown({ source, className }: { source: string; className?: st
       return;
     }
 
+    // Horizontal rule: --- / *** / ___ on their own line.
+    if (/^\s*([-*_])\1{2,}\s*$/.test(line)) {
+      blocks.push(<hr key={key} className="my-2 border-border" />);
+      return;
+    }
+
     if (line.trim() === "") {
       blocks.push(<div key={key} className="h-2" />);
       return;
     }
 
     blocks.push(
-      <p key={key} className="text-sm text-muted-foreground">
+      <p key={key} className={bodyClassName}>
         {renderInline(line, key)}
       </p>
     );
   });
-  flushList("ul-end");
+  flushList("list-end");
 
   return <div className={className}>{blocks}</div>;
 }
