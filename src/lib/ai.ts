@@ -164,6 +164,24 @@ async function chatFetch(
 }
 
 /**
+ * Turn a failed Response into a readable message. Our proxy (and most providers) return errors as
+ * `{"error": "..."}` or `{"error": {"message": "..."}}` — unwrap that so the user sees the actual
+ * reason, not the raw JSON envelope (`AI API вернул 502: {"error":"…"}`).
+ */
+async function errorText(res: Response): Promise<string> {
+  const raw = await res.text().catch(() => "");
+  let detail = raw;
+  try {
+    const j = JSON.parse(raw);
+    const err = j?.error ?? j;
+    detail = typeof err === "string" ? err : err?.message ?? raw;
+  } catch {
+    // not JSON — keep the raw text
+  }
+  return `AI API вернул ${res.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`;
+}
+
+/**
  * Non-streaming request — used for the "decide" turn when tools are offered. Tool-call arguments
  * arrive as one parsed JSON object this way, instead of fragments that would need reassembling
  * across SSE deltas (the streaming endpoint's tool-call shape varies more across providers).
@@ -181,10 +199,7 @@ export async function requestCompletion(
     { model: cfg.model, messages, ...(tools && tools.length > 0 ? { tools, tool_choice: "auto" } : {}) },
     signal
   );
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`AI API вернул ${res.status}${text ? `: ${text.slice(0, 300)}` : ""}`);
-  }
+  if (!res.ok) throw new Error(await errorText(res));
   const json = await res.json();
   const msg = json.choices?.[0]?.message;
   if (!msg) throw new Error("AI API вернул пустой ответ.");
@@ -210,10 +225,7 @@ export async function* streamChat(messages: ChatMessage[], signal?: AbortSignal)
   if (!cfg) throw new Error("AI не настроен — добавьте ключ в Настройках.");
 
   const res = await chatFetch(cfg, { model: cfg.model, messages, stream: true }, signal);
-  if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`AI API вернул ${res.status}${text ? `: ${text.slice(0, 300)}` : ""}`);
-  }
+  if (!res.ok || !res.body) throw new Error(await errorText(res));
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

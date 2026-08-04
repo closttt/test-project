@@ -27,19 +27,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  let upstream: Response;
+  // The endpoint is called from OUR server, not the browser, so a localhost/private-network baseUrl
+  // (e.g. Ollama) can never be reached from the deployed site — undici just throws an opaque
+  // "fetch failed". Catch it here with an actionable message instead.
+  let target: URL;
   try {
-    upstream = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(payload),
-    });
-  } catch (e) {
+    target = new URL(`${baseUrl.replace(/\/$/, "")}/chat/completions`);
+  } catch {
+    res.status(400).json({ error: `Некорректный AI-endpoint: «${baseUrl}». Укажите полный https-адрес в Настройках.` });
+    return;
+  }
+  if (target.protocol !== "https:") {
+    res.status(400).json({ error: "AI-endpoint должен быть по https — с задеплоенного сайта http-адрес недоступен." });
+    return;
+  }
+  if (isUnreachableHost(target.hostname)) {
     res.status(502).json({
-      error: `Прокси не смог достучаться до AI-сервера: ${e instanceof Error ? e.message : String(e)}`,
+      error: `Локальный endpoint (${target.hostname}) не виден с сервера — Ollama и подобное работают только при локальном запуске приложения. В проде выберите облачный провайдер (Gemini, Nous и т.п.).`,
     });
     return;
   }
+
+  // Bounded so a hung upstream returns a clear message instead of eventually surfacing as
+  // "fetch failed" after the platform kills the function.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 55_000);
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof DOMException && e.name === "AbortError") {
+      res.status(504).json({ error: "AI-сервер не ответил за 55 с — превышен таймаут. Попробуйте ещё раз или смените модель/провайдера." });
+      return;
+    }
+    // undici hides the real reason in `.cause` (ENOTFOUND, ECONNREFUSED, TLS, …) — surface it so
+    // the failure is actionable instead of a bare "fetch failed".
+    res.status(502).json({
+      error: `Прокси не смог достучаться до AI-сервера: ${describeFetchError(e)}`,
+    });
+    return;
+  }
+  clearTimeout(timeout);
 
   res.status(upstream.status);
   res.setHeader("Content-Type", upstream.headers.get("Content-Type") ?? "application/json");
@@ -69,4 +104,34 @@ function safeParse(s: string): unknown {
   } catch {
     return {};
   }
+}
+
+/** Hosts that resolve to the server itself or a private LAN — never reachable from a deployed proxy. */
+function isUnreachableHost(host: string): boolean {
+  const h = host.toLowerCase();
+  return (
+    h === "localhost" ||
+    h === "0.0.0.0" ||
+    h === "::1" ||
+    h.endsWith(".local") ||
+    /^127\./.test(h) ||
+    /^10\./.test(h) ||
+    /^192\.168\./.test(h) ||
+    /^169\.254\./.test(h) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(h)
+  );
+}
+
+/** Pull the real reason out of an undici "fetch failed" (the useful part is on `.cause`). */
+function describeFetchError(e: unknown): string {
+  if (e instanceof Error) {
+    const cause = (e as { cause?: unknown }).cause;
+    if (cause && typeof cause === "object") {
+      const c = cause as { code?: string; message?: string };
+      if (c.code) return `${e.message} (${c.code})`;
+      if (c.message) return `${e.message} — ${c.message}`;
+    }
+    return e.message;
+  }
+  return String(e);
 }
