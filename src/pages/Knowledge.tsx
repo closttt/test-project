@@ -108,11 +108,12 @@ function LinkThumb({ domain, index }: { domain: string; index: number }) {
   return (
     <div
       className="flex h-20 items-center justify-center"
-      style={{ background: `linear-gradient(180deg, #ffffff, #eef0f4)` }}
+      // Colour fills the plate; a soft light→dark sheen over it gives the flat fill some depth.
+      style={{ background: `linear-gradient(135deg, rgba(255,255,255,0.14), rgba(0,0,0,0.14)), ${c.fg}` }}
     >
       <span
-        className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl font-bold text-white shadow-sm"
-        style={{ background: c.fg }}
+        className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-xl font-bold shadow-sm"
+        style={{ color: c.fg }}
       >
         {linkMonogram(domain)}
       </span>
