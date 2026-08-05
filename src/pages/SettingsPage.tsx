@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Sun, AlertTriangle, Trash2, Download, Upload, Bell, Trophy, Timer, Volume2, LayoutList, GripVertical, RotateCcw, FileSpreadsheet, Bot, Eye, EyeOff, CalendarClock, RefreshCw } from "lucide-react";
+import { Moon, Sun, AlertTriangle, Trash2, Download, Upload, Bell, Trophy, Timer, Volume2, LayoutList, GripVertical, RotateCcw, FileSpreadsheet, Bot, Eye, EyeOff, CalendarClock, RefreshCw, Cloud } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import {
 import { StaggerList, StaggerItem } from "@/components/motion/Stagger";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useData } from "@/store/DataProvider";
+import { formatDateTime } from "@/lib/format";
 import { useToast } from "@/store/ToastProvider";
 import { cn } from "@/lib/utils";
 import { migrate } from "@/lib/storage";
@@ -47,6 +48,7 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 
 export default function SettingsPage() {
   const data = useData();
+  const { cloudSync, cloudPushNow, cloudPullNow } = data;
   const { settings, updateSettings, replaceAll, gamification, updateGamification, addMeeting } = data;
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -499,6 +501,86 @@ export default function SettingsPage() {
                 )}
                 {pushMsg && <p className={cn("text-xs", pushErr ? "text-risk" : "text-muted-foreground")}>{pushMsg}</p>}
               </div>
+            </CardContent>
+          </Card>
+        </StaggerItem>
+
+        <StaggerItem>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Cloud className="h-4 w-4" /> Облачная синхронизация
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <p className="text-xs text-muted-foreground/70">
+                Задачи, проекты, заметки, клиенты, ученики, встречи и настройки хранятся в Supabase, так что
+                они одни и те же на всех устройствах. Запись всегда идёт сначала в этот браузер, а в облако —
+                следом: если облако недоступно, ничего не теряется. Прикреплённые файлы остаются на том
+                устройстве, где их добавили.
+              </p>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-secondary/40 px-3 py-2">
+                <span className="flex items-center gap-2 text-sm">
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      cloudSync.state === "ok" && "bg-success",
+                      cloudSync.state === "syncing" && "bg-brand",
+                      cloudSync.state === "error" && "bg-risk",
+                      cloudSync.state === "conflict" && "bg-amber-400",
+                      (cloudSync.state === "off" || cloudSync.state === "idle") && "bg-muted-foreground"
+                    )}
+                  />
+                  {cloudSync.state === "off" && "Не настроено — нет ключей Supabase"}
+                  {cloudSync.state === "idle" && "Ожидание"}
+                  {cloudSync.state === "syncing" && "Синхронизация…"}
+                  {cloudSync.state === "ok" &&
+                    `${cloudSync.direction === "pushed" ? "Выгружено в облако" : "Загружено из облака"} · ${formatDateTime(cloudSync.at)}`}
+                  {cloudSync.state === "conflict" && "Расхождение — нужно выбрать версию"}
+                  {cloudSync.state === "error" && "Ошибка синхронизации"}
+                </span>
+                {cloudSync.state !== "off" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7"
+                    onClick={cloudPushNow}
+                    disabled={cloudSync.state === "syncing"}
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", cloudSync.state === "syncing" && "animate-spin")} />
+                    Выгрузить сейчас
+                  </Button>
+                )}
+              </div>
+
+              {cloudSync.state === "error" && <p className="text-xs text-risk">{cloudSync.message}</p>}
+
+              {cloudSync.state === "conflict" && (
+                <div className="flex flex-col gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+                  <p className="text-xs text-amber-400">
+                    В облаке лежит более свежая запись, но в ней меньше данных ({cloudSync.remoteCount} записей
+                    против {cloudSync.localCount} здесь). Чтобы ничего не потерять, автоматически ничего не
+                    применено — выберите сами.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={cloudPushNow}>
+                      Оставить эти данные и перезаписать облако
+                    </Button>
+                    <Button size="sm" variant="ghost" className="text-risk hover:text-risk" onClick={cloudPullNow}>
+                      Взять версию из облака
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {cloudSync.state !== "off" && (
+                <p className="text-xs text-muted-foreground/70">
+                  Если синхронизация ругается на таблицу — прогоните{" "}
+                  <code className="rounded bg-secondary px-1 py-0.5">supabase/app_state.sql</code> в Supabase →
+                  SQL Editor. Это разово.
+                </p>
+              )}
             </CardContent>
           </Card>
         </StaggerItem>

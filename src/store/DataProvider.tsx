@@ -21,6 +21,16 @@ import type {
 } from "@/types";
 import { ACCENTS } from "@/types";
 import { loadData, createDebouncedSaver } from "@/lib/storage";
+import {
+  cloudSyncEnabled,
+  fetchRemote,
+  pushRemote,
+  decideSync,
+  loadSyncMeta,
+  saveSyncMeta,
+  describeSyncError,
+  type CloudSyncStatus,
+} from "@/lib/cloudSync";
 import { seedData } from "@/lib/seed";
 import { uid } from "@/lib/id";
 import { daysSince, todayStr, localDayStr } from "@/lib/format";
@@ -142,6 +152,12 @@ interface DataContextValue extends AppData {
   archivedTasks: Task[];
   archivedProjects: Project[];
   archivedNotes: Note[];
+  /** Health of the Supabase mirror (see lib/cloudSync.ts). */
+  cloudSync: CloudSyncStatus;
+  /** Force this device's state up, overwriting the cloud copy — how a conflict is resolved. */
+  cloudPushNow: () => void;
+  /** Take the cloud copy, replacing this device's state — the other half of conflict resolution. */
+  cloudPullNow: () => void;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -174,6 +190,9 @@ function advanceDate(dateStr: string, rec: Exclude<Recurrence, "none">): string 
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => loadData() ?? seedData());
+  // Always the latest state, readable from async callbacks (cloud sync) without re-subscribing.
+  const dataRef = useRef(data);
+  dataRef.current = data;
   // Debounced so a drag-reorder (Reorder.Group onReorder fires on every pixel moved) doesn't
   // write to localStorage on every intermediate frame — see createDebouncedSaver's docstring for
   // why flush() below is not optional.
@@ -201,6 +220,81 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /**
+   * Cloud mirror of the whole state (see lib/cloudSync.ts + supabase/app_state.sql). Deliberately
+   * layered ON TOP of the local save above, never in place of it: local storage is written first
+   * and unconditionally, so a cloud outage or a missing table costs the user nothing.
+   */
+  const [sync, setSync] = useState<CloudSyncStatus>(() =>
+    cloudSyncEnabled() ? { state: "idle" } : { state: "off" }
+  );
+  const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Set once the first pull has settled — until then we must not push and clobber the cloud. */
+  const pulled = useRef(false);
+
+  // Boot: reconcile with the cloud once.
+  useEffect(() => {
+    if (!cloudSyncEnabled()) return;
+    let cancelled = false;
+    setSync({ state: "syncing" });
+    (async () => {
+      try {
+        const remote = await fetchRemote();
+        if (cancelled) return;
+        const meta = loadSyncMeta();
+        const decision = decideSync({
+          local: dataRef.current,
+          remote: remote.data,
+          remoteUpdatedAt: remote.updatedAt,
+          lastSeenRemoteAt: meta.lastSeenRemoteAt,
+        });
+        if (decision.action === "pull") {
+          setData(remote.data as AppData);
+          saveSyncMeta({ lastSeenRemoteAt: remote.updatedAt ?? undefined });
+          setSync({ state: "ok", at: new Date().toISOString(), direction: "pulled" });
+        } else if (decision.action === "conflict") {
+          // Keep local, say so loudly — the user decides, we never auto-destroy data.
+          setSync({
+            state: "conflict",
+            localCount: decision.localCount,
+            remoteCount: decision.remoteCount,
+          });
+        } else if (decision.action === "skip") {
+          setSync({ state: "error", message: "В облаке лежат некорректные данные — они не были применены." });
+        } else {
+          const at = await pushRemote(dataRef.current);
+          if (cancelled) return;
+          saveSyncMeta({ lastSeenRemoteAt: at ?? undefined });
+          setSync({ state: "ok", at: new Date().toISOString(), direction: "pushed" });
+        }
+      } catch (e) {
+        if (!cancelled) setSync({ state: "error", message: describeSyncError(e) });
+      } finally {
+        pulled.current = true;
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Mirror every change up, debounced well behind the local save so typing doesn't spam the API.
+  useEffect(() => {
+    if (!cloudSyncEnabled() || !pulled.current) return;
+    // A conflict is unresolved until the user picks a side — pushing would resolve it by force.
+    if (sync.state === "conflict") return;
+    if (pushTimer.current) clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(() => {
+      setSync((s) => (s.state === "conflict" ? s : { state: "syncing" }));
+      pushRemote(dataRef.current)
+        .then((at) => {
+          saveSyncMeta({ lastSeenRemoteAt: at ?? undefined });
+          setSync({ state: "ok", at: new Date().toISOString(), direction: "pushed" });
+        })
+        .catch((e) => setSync({ state: "error", message: describeSyncError(e) }));
+    }, 2500);
+    return () => { if (pushTimer.current) clearTimeout(pushTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
   // Apply theme + accent + density to <html> so tokens switch app-wide.
   useEffect(() => {
     const root = document.documentElement;
@@ -227,6 +321,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
       archivedTasks: data.tasks.filter((t) => t.archivedAt),
       archivedProjects: data.projects.filter((p) => p.archivedAt),
       archivedNotes: data.notes.filter((n) => n.archivedAt),
+      cloudSync: sync,
+      cloudPushNow: () => {
+        setSync({ state: "syncing" });
+        pushRemote(dataRef.current)
+          .then((at) => {
+            saveSyncMeta({ lastSeenRemoteAt: at ?? undefined });
+            setSync({ state: "ok", at: new Date().toISOString(), direction: "pushed" });
+          })
+          .catch((e) => setSync({ state: "error", message: describeSyncError(e) }));
+      },
+      cloudPullNow: () => {
+        setSync({ state: "syncing" });
+        fetchRemote()
+          .then((remote) => {
+            if (!remote.data) {
+              setSync({ state: "error", message: "В облаке пока пусто — нечего загружать." });
+              return;
+            }
+            setData(remote.data as AppData);
+            saveSyncMeta({ lastSeenRemoteAt: remote.updatedAt ?? undefined });
+            setSync({ state: "ok", at: new Date().toISOString(), direction: "pulled" });
+          })
+          .catch((e) => setSync({ state: "error", message: describeSyncError(e) }));
+      },
 
       addClient: (input) =>
         setData((d) => ({
@@ -809,7 +927,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return "none";
       },
     }),
-    [data]
+    [data, sync]
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
