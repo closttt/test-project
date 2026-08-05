@@ -26,9 +26,18 @@ export function prettyDomain(url: string): string {
 }
 
 /**
- * Generated (no external fetch) card visual for a saved link: a coloured monogram "logo" on a light
- * plate. Colours are the app's design-system accents; cards cycle through them by position so the
- * shelf reads as a varied grid (red, blue, violet, green, …) rather than one flat colour.
+ * The site's own logo, at a size that reads as one on a card. Google's public favicon service —
+ * no key, cached on their side. Browsers can't fetch a site's OG image cross-origin, so this is
+ * the reliable way to show the REAL logo; the monogram below is the fallback when a site has none.
+ */
+export function faviconUrl(domain: string, size = 128): string {
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=${size}`;
+}
+
+/**
+ * Card visual for a saved link: the logo sits on a coloured plate. Colours are the app's
+ * design-system accents; cards cycle through them by position so the shelf reads as a varied
+ * grid (red, blue, violet, green, …) rather than one flat colour.
  */
 export interface LinkColor {
   /** Solid fill for the logo tile. */
