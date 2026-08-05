@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { decideSync, countEntries, isPlausibleAppData, describeSyncError } from "@/lib/cloudSync";
+import { decideSync, countEntries, isPlausibleAppData, describeSyncError, remoteMovedOn } from "@/lib/cloudSync";
 import { DEFAULT_SETTINGS, DEFAULT_GAMIFICATION, type AppData } from "@/types";
 
 function state(over: Partial<AppData> = {}): AppData {
@@ -131,6 +131,22 @@ describe("decideSync", () => {
       lastSeenRemoteAt: OLDER,
     });
     expect(d).toEqual({ action: "skip", reason: "remote-invalid" });
+  });
+});
+
+// The check that stops a tab left open on one device from overwriting work done on another.
+describe("remoteMovedOn", () => {
+  it("flags a cloud row written after this device last synced", () => {
+    expect(remoteMovedOn(NEWER, OLDER)).toBe(true);
+  });
+
+  it("stays quiet when the cloud is exactly where we left it", () => {
+    expect(remoteMovedOn(OLDER, OLDER)).toBe(false);
+  });
+
+  it("stays quiet on a first sync (nothing seen yet) and on an empty cloud", () => {
+    expect(remoteMovedOn(NEWER, undefined)).toBe(false);
+    expect(remoteMovedOn(null, OLDER)).toBe(false);
   });
 });
 

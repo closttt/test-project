@@ -29,6 +29,9 @@ import {
   loadSyncMeta,
   saveSyncMeta,
   describeSyncError,
+  fetchRemoteStamp,
+  remoteMovedOn,
+  countEntries,
   type CloudSyncStatus,
 } from "@/lib/cloudSync";
 import { seedData } from "@/lib/seed";
@@ -231,6 +234,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Set once the first pull has settled — until then we must not push and clobber the cloud. */
   const pulled = useRef(false);
+  /** Local edits not yet mirrored up; blocks the refresh-on-focus pull from discarding them. */
+  const dirty = useRef(false);
 
   // Boot: reconcile with the cloud once.
   useEffect(() => {
@@ -281,19 +286,70 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!cloudSyncEnabled() || !pulled.current) return;
     // A conflict is unresolved until the user picks a side — pushing would resolve it by force.
     if (sync.state === "conflict") return;
+    dirty.current = true;
     if (pushTimer.current) clearTimeout(pushTimer.current);
-    pushTimer.current = setTimeout(() => {
+    pushTimer.current = setTimeout(async () => {
       setSync((s) => (s.state === "conflict" ? s : { state: "syncing" }));
-      pushRemote(dataRef.current)
-        .then((at) => {
-          saveSyncMeta({ lastSeenRemoteAt: at ?? undefined });
-          setSync({ state: "ok", at: new Date().toISOString(), direction: "pushed" });
-        })
-        .catch((e) => setSync({ state: "error", message: describeSyncError(e) }));
+      try {
+        // Has another device written since we last synced? A tab left open on the desktop still
+        // holds this morning's state; pushing it blind would erase a day of work done on the phone.
+        const meta = loadSyncMeta();
+        const stamp = await fetchRemoteStamp();
+        if (remoteMovedOn(stamp, meta.lastSeenRemoteAt)) {
+          const remote = await fetchRemote();
+          setSync({
+            state: "conflict",
+            localCount: countEntries(dataRef.current),
+            remoteCount: countEntries(remote.data as AppData),
+          });
+          return;
+        }
+        const at = await pushRemote(dataRef.current);
+        saveSyncMeta({ lastSeenRemoteAt: at ?? undefined });
+        dirty.current = false;
+        setSync({ state: "ok", at: new Date().toISOString(), direction: "pushed" });
+      } catch (e) {
+        setSync({ state: "error", message: describeSyncError(e) });
+      }
     }, 2500);
     return () => { if (pushTimer.current) clearTimeout(pushTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  /**
+   * Coming back to a tab pulls in whatever the other device did while it sat idle. This is what
+   * keeps the guard above from firing in normal use: the stale tab refreshes itself the moment you
+   * look at it, so by the time you edit anything it's already on the latest state. Skipped while
+   * there are unpushed local edits — adopting the cloud then would throw them away.
+   */
+  useEffect(() => {
+    if (!cloudSyncEnabled()) return;
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!pulled.current || dirty.current) return;
+      fetchRemote()
+        .then((remote) => {
+          const meta = loadSyncMeta();
+          const decision = decideSync({
+            local: dataRef.current,
+            remote: remote.data,
+            remoteUpdatedAt: remote.updatedAt,
+            lastSeenRemoteAt: meta.lastSeenRemoteAt,
+          });
+          if (decision.action !== "pull") return;
+          setData(remote.data as AppData);
+          saveSyncMeta({ lastSeenRemoteAt: remote.updatedAt ?? undefined });
+          setSync({ state: "ok", at: new Date().toISOString(), direction: "pulled" });
+        })
+        .catch(() => { /* offline — the next focus retries */ });
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
 
   // Apply theme + accent + density to <html> so tokens switch app-wide.
   useEffect(() => {

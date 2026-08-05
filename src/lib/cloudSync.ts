@@ -129,6 +129,23 @@ export async function fetchRemote(): Promise<RemoteState> {
   return { data: (data as { data: unknown }).data, updatedAt: (data as { updated_at: string }).updated_at };
 }
 
+/**
+ * Just the row's `updated_at` — cheap enough to ask before every push, which is how a device with
+ * a stale tab finds out that another one has written since, instead of overwriting its work.
+ */
+export async function fetchRemoteStamp(): Promise<string | null> {
+  const db = getSupabaseClient();
+  if (!db) throw new Error("Supabase не настроен.");
+  const { data, error } = await db.from("app_state").select("updated_at").eq("id", ROW_ID).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as { updated_at: string } | null)?.updated_at ?? null;
+}
+
+/** True when the cloud has moved on since this device last synced. */
+export function remoteMovedOn(stamp: string | null, lastSeenRemoteAt?: string): boolean {
+  return !!stamp && !!lastSeenRemoteAt && stamp > lastSeenRemoteAt;
+}
+
 /** Writes the whole state up, returning the row's new `updated_at`. */
 export async function pushRemote(state: AppData): Promise<string | null> {
   const db = getSupabaseClient();
