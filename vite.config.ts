@@ -13,6 +13,11 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     port: 5173,
+    // `/api/*` are Vercel functions. Run `npx vercel dev --listen 3000` alongside `npm run dev`
+    // to exercise auth/Notion/Gmail locally; without it these calls just fail (and auth stays open).
+    proxy: {
+      "/api": { target: "http://127.0.0.1:3000", changeOrigin: false },
+    },
   },
   /**
    * Two layers:
