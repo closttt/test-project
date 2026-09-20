@@ -36,6 +36,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { ProjectHealthBadge } from "@/components/ProjectHealthBadge";
 import { PhotoGallery, saveGalleryFiles, deleteGalleryFile } from "@/components/PhotoGallery";
 import { AttachmentRow } from "@/components/AttachmentRow";
+import { DragRowsContext, DragRow, DropZone, DragHandle } from "@/components/dnd/DragRows";
 import { TaskEditDialog } from "@/components/TaskEditDialog";
 import { SubtaskRow } from "@/components/SubtaskRow";
 import { SubtaskEditDialog } from "@/components/SubtaskEditDialog";
@@ -104,7 +105,6 @@ export default function ProjectDetail() {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => (id ? loadCollapsed(id) : new Set()));
   // Which task rows have their subtasks expanded (same affordance as the Задачи page).
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
-  const [dragOverSection, setDragOverSection] = useState<string | null>(null);
   const [editing, setEditing] = useState<Task | null>(null);
   /** Subtask whose own card is open — same affordance as on the Задачи page. */
   const [editingSub, setEditingSub] = useState<{ taskId: string; subId: string } | null>(null);
@@ -393,26 +393,11 @@ export default function ProjectDetail() {
     const overdue = !t.done && isOverdue(t.dueDate);
     const doneSub = t.subtasks.filter((s) => s.done).length;
     const isOpen = expandedTasks.has(t.id);
-    // Drag-reorder only makes sense in «Как есть»: under date/priority sort the list re-sorts on
-    // every render, so a drop would visibly snap back. Gate dragging on manual, same as /tasks.
-    const canDrag = sortBy === "manual";
+    // Rows are always draggable (dnd-kit — works on touch too). Under a date/priority sort a drop
+    // flips the list to «Как есть» so the new order is what the user actually sees — see onRowsDrop.
     return (
-      <div key={t.id}>
-      <div
-        draggable={canDrag}
-        onDragStart={(e) => canDrag && e.dataTransfer.setData("application/x-task-id", t.id)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          // Reorder within the project: drop a task onto another row to place it just before that row
-          // (and adopt its section). stopPropagation so the section container's move-drop doesn't also fire.
-          const draggedId = e.dataTransfer.getData("application/x-task-id");
-          if (draggedId) { e.stopPropagation(); moveTaskBefore(draggedId, t.id); }
-        }}
-        className={cn(
-          "group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-secondary/30",
-          canDrag && "cursor-grab active:cursor-grabbing"
-        )}
-      >
+      <DragRow key={t.id} id={t.id} data={{ type: "task" }}>
+      <div className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-secondary/30">
         {t.subtasks.length > 0 ? (
           <button
             onClick={() => toggleTaskExpanded(t.id)}
@@ -533,8 +518,27 @@ export default function ProjectDetail() {
           ))}
         </div>
       )}
-      </div>
+      </DragRow>
     );
+  }
+
+  /** One drop handler for the whole task list: task→task = place before (adopt its section),
+   * task→section zone = move into that section, section handle→section zone = reorder sections. */
+  function onRowsDrop(a: { id: string; type: string; name?: unknown }, o: { id: string; type: string; name?: unknown }) {
+    if (a.type === "section" && o.type === "section") {
+      if (typeof a.name === "string" && typeof o.name === "string") moveSection(a.name, o.name);
+      return;
+    }
+    if (a.type !== "task") return;
+    if (o.type === "task") {
+      if (sortBy !== "manual") {
+        setSortBy("manual");
+        toast("Сортировка: «Как есть» — чтобы сохранить ваш порядок");
+      }
+      moveTaskBefore(a.id, o.id);
+      return;
+    }
+    if (o.type === "section") updateTask(a.id, { section: typeof o.name === "string" ? o.name : undefined });
   }
 
   function handleDeleteProject() {
@@ -856,6 +860,18 @@ export default function ProjectDetail() {
                   Пока нет задач. Добавьте первую выше.
                 </p>
               )}
+              <DragRowsContext
+                onDrop={onRowsDrop}
+                labelOf={(id) => projectTasks.find((x) => x.id === id)?.title ?? id.replace(/^(zone|sec):/, "").replace("__none", "Без секции")}
+                renderOverlay={(a) => {
+                  const t = a.type === "task" ? projectTasks.find((x) => x.id === a.id) : undefined;
+                  return (
+                    <div className="rounded-md border border-border bg-card px-2.5 py-1.5 text-sm">
+                      {t ? t.title : String(a.name ?? "")}
+                    </div>
+                  );
+                }}
+              >
               {useTimeGroups ? (
                 <div className="flex flex-col gap-4">
                   {timeGroups.map((g) => (
@@ -896,30 +912,22 @@ export default function ProjectDetail() {
                 const sectionTotal = g.name !== null ? projectTasks.filter((t) => t.section === g.name).length : 0;
                 const sectionDone = g.name !== null ? projectTasks.filter((t) => t.section === g.name && t.done).length : 0;
                 return (
-                  <div
+                  <DropZone
                     key={g.name ?? "__none"}
+                    id={`zone:${g.name ?? "__none"}`}
+                    data={{ type: "section", name: g.name }}
                     className={cn(
                       "flex flex-col gap-1 rounded transition-colors",
                       // Task 1: clearly detach the no-section tasks from the sectioned ones above
                       // (extra top space + a dashed divider) so they don't read as part of a section.
-                      g.name === null && sections.length > 0 && "mt-5 border-t-2 border-dashed border-border pt-4",
-                      dragOverSection === (g.name ?? "__none") && "bg-brand/5 ring-1 ring-inset ring-brand/40"
+                      g.name === null && sections.length > 0 && "mt-5 border-t-2 border-dashed border-border pt-4"
                     )}
-                    draggable={g.name !== null}
-                    onDragStart={(e) => { if (g.name) e.dataTransfer.setData("application/x-project-section", g.name); }}
-                    onDragOver={(e) => { e.preventDefault(); setDragOverSection(g.name ?? "__none"); }}
-                    onDragLeave={() => setDragOverSection((cur) => (cur === (g.name ?? "__none") ? null : cur))}
-                    onDrop={(e) => {
-                      setDragOverSection(null);
-                      const sectionFrom = e.dataTransfer.getData("application/x-project-section");
-                      if (sectionFrom && g.name) { moveSection(sectionFrom, g.name); return; }
-                      const taskId = e.dataTransfer.getData("application/x-task-id");
-                      if (taskId) updateTask(taskId, { section: g.name ?? undefined });
-                    }}
                   >
                     {g.name !== null && (
                       <div className="group/sec mt-1 flex items-center gap-2 border-t border-border pt-2 text-xs font-medium text-muted-foreground">
-                        <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/40" />
+                        <DragHandle id={`sec:${g.name}`} data={{ type: "section", name: g.name }} className="shrink-0 cursor-grab active:cursor-grabbing">
+                          <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
+                        </DragHandle>
                         <button onClick={() => toggleCollapse(g.name!)} className="shrink-0">
                           {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         </button>
@@ -984,10 +992,11 @@ export default function ProjectDetail() {
                         </div>
                       </>
                     )}
-                  </div>
+                  </DropZone>
                 );
               })
               )}
+              </DragRowsContext>
             </CardContent>
           </Card>
         </StaggerItem>

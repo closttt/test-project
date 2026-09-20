@@ -65,6 +65,9 @@ import { useToast } from "@/store/ToastProvider";
 import { dueLabel, isOverdue, isToday, isUpcoming, todayStr, formatDate, addDays } from "@/lib/format";
 import { tagColor, FIXED_TAGS } from "@/lib/tags";
 import { loadKanbanColumns, saveKanbanColumns, newKanbanColumn, COLUMN_COLORS, COLUMN_COLOR_ORDER, type KanbanColumn, type ColumnColor } from "@/lib/kanban";
+import { placeInColumn } from "@/lib/taskOrder";
+import { KanbanBoard, type BoardColumn } from "@/components/kanban/KanbanBoard";
+import { DragRowsContext, DragRow } from "@/components/dnd/DragRows";
 import { pushUndo } from "@/lib/undoStack";
 import { pushRecent } from "@/lib/recent";
 import { blockingTasks, isBlocked } from "@/lib/dependencies";
@@ -849,21 +852,9 @@ export default function Tasks() {
     return (
       <div
         key={task.id}
-        draggable
         tabIndex={0}
         role="listitem"
         aria-label={`${task.title}. Стрелки влево/вправо — перенести в соседнюю колонку`}
-        onDragStart={(e) => e.dataTransfer.setData("text/plain", task.id)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          // Drop onto a card: reorder within the same column, or move in from another column.
-          const draggedId = e.dataTransfer.getData("text/plain");
-          if (!draggedId || draggedId === task.id) return;
-          e.stopPropagation();
-          const dragged = tasks.find((t) => t.id === draggedId);
-          if (dragged && col.match(dragged)) moveTaskBefore(draggedId, task.id, false);
-          else col.onDrop(draggedId);
-        }}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, task }); }}
         onKeyDown={(e) => {
           if (e.key === "ArrowLeft") { e.preventDefault(); moveTaskByKeyboard(task, -1); }
@@ -1050,6 +1041,23 @@ export default function Tasks() {
       (t) => !isSnoozed(t) && (!activeTag || t.tags.includes(activeTag)) && (!q || t.title.toLowerCase().includes(q))
     );
     const cols = kanbanColumns();
+    const byKey = new Map(cols.map((c) => [c.key, c] as const));
+    // Manual order within a column — dnd-kit reorders live while dragging, this is the resting truth.
+    const itemsByColumn: Record<string, Task[]> = {};
+    cols.forEach((col) => { itemsByColumn[col.key] = base.filter(col.match).sort((a, b) => a.order - b.order); });
+    const boardCols: BoardColumn[] = cols.map((c) => ({ key: c.key, editable: c.editable, collapsed: collapsedCols.has(c.key) }));
+    const isOverWip = (col: KanbanCol) => !!col.wipLimit && (itemsByColumn[col.key]?.length ?? 0) > col.wipLimit;
+
+    /** A card landed in `toKey` with `beforeId` directly under it (null = bottom). Apply the column's
+     * property if it changed columns, then slot it into the global manual order at that spot. */
+    function moveTo(id: string, toKey: string, beforeId: string | null) {
+      const col = byKey.get(toKey);
+      const task = tasks.find((t) => t.id === id);
+      if (!col || !task) return;
+      if (!col.match(task)) col.onDrop(id);
+      reorderTasks(placeInColumn(tasks, id, (itemsByColumn[toKey] ?? []).map((t) => t.id), beforeId));
+    }
+
     return (
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
@@ -1071,188 +1079,176 @@ export default function Tasks() {
             </Button>
           )}
         </div>
-        <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none">
-          {cols.map((col) => {
-            // Sort by manual order so drag-to-reorder WITHIN a column is respected (not just moves between).
-            const colTasks = base.filter(col.match).sort((a, b) => a.order - b.order);
-            const overWip = !!col.wipLimit && colTasks.length > col.wipLimit;
-
+        <KanbanBoard<Task>
+          columns={boardCols}
+          itemsByColumn={itemsByColumn}
+          onMoveItem={moveTo}
+          onMoveColumn={moveColumn}
+          labelOf={(id) => byKey.get(id)?.label ?? tasks.find((t) => t.id === id)?.title ?? id}
+          columnClassName={(bc) => (isOverWip(byKey.get(bc.key)!) ? "border-risk/40 bg-risk/5" : "border-border")}
+          renderCard={(t, bc) => kanbanCard(t, byKey.get(bc.key)!)}
+          renderEmpty={() => (
+            <p className="rounded-lg border border-dashed border-border px-1 py-6 text-center text-xs text-muted-foreground">
+              Перетащите сюда или добавьте ↓
+            </p>
+          )}
+          renderCollapsed={(bc, colTasks, isOver) => {
             // Collapsed: a narrow strip with a vertical label + count; drop still moves a card here.
-            if (collapsedCols.has(col.key)) {
-              return (
-                <div
-                  key={col.key}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { const id = e.dataTransfer.getData("text/plain"); if (id) col.onDrop(id); }}
-                  className={cn(
-                    "flex w-11 shrink-0 snap-start flex-col items-center gap-2 rounded-xl border p-2",
-                    overWip ? "border-risk/40 bg-risk/5" : "border-border bg-secondary/20"
-                  )}
-                >
-                  <button
-                    onClick={() => toggleColCollapsed(col.key)}
-                    aria-label={`Развернуть колонку: ${col.label}`}
-                    title="Развернуть колонку"
-                    className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    <ChevronsLeftRight className="h-4 w-4" />
-                  </button>
-                  <span className={cn("text-xs tabular-nums", overWip ? "font-semibold text-risk" : "text-muted-foreground")}>{colTasks.length}</span>
-                  <span
-                    className="min-h-0 flex-1 truncate text-xs font-medium text-muted-foreground"
-                    style={{ writingMode: "vertical-rl" }}
-                    title={col.label}
-                  >
-                    {col.label}
-                  </span>
-                </div>
-              );
-            }
-
+            const col = byKey.get(bc.key)!;
+            const overWip = isOverWip(col);
             return (
               <div
-                key={col.key}
-                draggable={col.editable}
-                onDragStart={(e) => { if (col.editable) e.dataTransfer.setData("application/x-kanban-col", col.key); }}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  const colId = e.dataTransfer.getData("application/x-kanban-col");
-                  if (colId) { moveColumn(colId, col.key); return; }
-                  const id = e.dataTransfer.getData("text/plain");
-                  if (id) col.onDrop(id);
-                }}
                 className={cn(
-                  "kanban-col flex min-h-32 shrink-0 snap-start flex-col gap-2 rounded-xl border bg-secondary/20 p-2",
-                  overWip ? "border-risk/40 bg-risk/5" : "border-border",
-                  col.editable && "cursor-grab active:cursor-grabbing"
+                  "flex w-11 shrink-0 snap-start flex-col items-center gap-2 rounded-xl border p-2 transition-colors",
+                  overWip ? "border-risk/40 bg-risk/5" : "border-border bg-secondary/20",
+                  isOver && "bg-brand/5 ring-1 ring-inset ring-brand/40"
                 )}
               >
-                <div className="group flex items-center justify-between px-1 py-0.5 text-sm font-medium">
-                  {renamingColId === col.key ? (
-                    <input
-                      autoFocus
-                      value={colRenameDraft}
-                      onChange={(e) => setColRenameDraft(e.target.value)}
-                      onBlur={() => { renameColumn(col.key, colRenameDraft); setRenamingColId(null); }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") { renameColumn(col.key, colRenameDraft); setRenamingColId(null); }
-                        if (e.key === "Escape") setRenamingColId(null);
-                      }}
-                      className="min-w-0 flex-1 rounded border border-brand bg-transparent px-1 py-0.5 text-sm outline-none"
-                    />
-                  ) : (
-                    <span
-                      className="flex min-w-0 flex-1 items-center gap-2"
-                      onDoubleClick={() => { if (col.editable) { setRenamingColId(col.key); setColRenameDraft(col.label); } }}
-                      title={col.editable ? "Двойной клик — переименовать" : undefined}
-                    >
-                      {col.dot && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: col.dot }} />}
-                      {col.colorClass && <span className={cn("h-2 w-2 shrink-0 rounded-full", col.colorClass)} />}
-                      <span className="truncate">{col.label}</span>
-                    </span>
-                  )}
+                <button
+                  onClick={() => toggleColCollapsed(col.key)}
+                  aria-label={`Развернуть колонку: ${col.label}`}
+                  title="Развернуть колонку"
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ChevronsLeftRight className="h-4 w-4" />
+                </button>
+                <span className={cn("text-xs tabular-nums", overWip ? "font-semibold text-risk" : "text-muted-foreground")}>{colTasks.length}</span>
+                <span
+                  className="min-h-0 flex-1 truncate text-xs font-medium text-muted-foreground"
+                  style={{ writingMode: "vertical-rl" }}
+                  title={col.label}
+                >
+                  {col.label}
+                </span>
+              </div>
+            );
+          }}
+          renderHeader={(bc, colTasks, handle) => {
+            const col = byKey.get(bc.key)!;
+            const overWip = isOverWip(col);
+            return (
+              <div className="group flex items-center justify-between px-1 py-0.5 text-sm font-medium">
+                {renamingColId === col.key ? (
+                  <input
+                    autoFocus
+                    value={colRenameDraft}
+                    onChange={(e) => setColRenameDraft(e.target.value)}
+                    onBlur={() => { renameColumn(col.key, colRenameDraft); setRenamingColId(null); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { renameColumn(col.key, colRenameDraft); setRenamingColId(null); }
+                      if (e.key === "Escape") setRenamingColId(null);
+                    }}
+                    className="min-w-0 flex-1 rounded border border-brand bg-transparent px-1 py-0.5 text-sm outline-none"
+                  />
+                ) : (
                   <span
-                    className={cn(
-                      "shrink-0 text-xs tabular-nums",
-                      overWip ? "font-semibold text-risk" : "text-muted-foreground"
-                    )}
-                    title={col.wipLimit ? `Лимит WIP: ${col.wipLimit}` : undefined}
+                    {...(col.editable ? handle : {})}
+                    className={cn("flex min-w-0 flex-1 items-center gap-2 rounded outline-none", col.editable && "cursor-grab touch-manipulation active:cursor-grabbing")}
+                    onDoubleClick={() => { if (col.editable) { setRenamingColId(col.key); setColRenameDraft(col.label); } }}
+                    title={col.editable ? "Тяните — переставить, двойной клик — переименовать" : undefined}
                   >
-                    {colTasks.length}{col.wipLimit ? `/${col.wipLimit}` : ""}
+                    {col.dot && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: col.dot }} />}
+                    {col.colorClass && <span className={cn("h-2 w-2 shrink-0 rounded-full", col.colorClass)} />}
+                    <span className="truncate">{col.label}</span>
                   </span>
-                  <button
-                    onClick={() => toggleColCollapsed(col.key)}
-                    aria-label={`Свернуть колонку: ${col.label}`}
-                    title="Свернуть колонку"
-                    className="shrink-0 rounded p-0.5 text-muted-foreground/50 transition-colors hover:text-foreground"
-                  >
-                    <ChevronsRightLeft className="h-3.5 w-3.5" />
-                  </button>
-                  {col.editable && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={`Настроить колонку: ${col.label}`}
-                          title="Цвет и лимит WIP"
-                          className="shrink-0 rounded p-0.5 text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                        >
-                          <Settings2 className="h-3.5 w-3.5" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-56">
-                        <p className="px-2 py-1 text-xs text-muted-foreground">Цвет</p>
-                        <div className="flex flex-wrap gap-1.5 px-2 pb-2">
-                          {COLUMN_COLOR_ORDER.map((c) => (
-                            <button
-                              key={c}
-                              type="button"
-                              aria-label={COLUMN_COLORS[c].label}
-                              title={COLUMN_COLORS[c].label}
-                              onClick={() => setColumnColor(col.key, c)}
-                              className={cn(
-                                "h-5 w-5 rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                                COLUMN_COLORS[c].dot,
-                                columns.find((x) => x.id === col.key)?.color === c && "ring-2 ring-foreground ring-offset-1 ring-offset-background"
-                              )}
-                            />
-                          ))}
-                        </div>
-                        <DropdownMenuSeparator />
-                        <div className="px-2 py-1.5">
-                          <p className="mb-1 text-xs text-muted-foreground">Лимит WIP (0 — без лимита)</p>
-                          <Input
-                            type="number"
-                            min={0}
-                            className="h-8 text-xs"
-                            value={col.wipLimit ?? 0}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              const n = Number(e.target.value) || 0;
-                              setColumnWip(col.key, n > 0 ? n : undefined);
-                            }}
+                )}
+                <span
+                  className={cn(
+                    "shrink-0 text-xs tabular-nums",
+                    overWip ? "font-semibold text-risk" : "text-muted-foreground"
+                  )}
+                  title={col.wipLimit ? `Лимит WIP: ${col.wipLimit}` : undefined}
+                >
+                  {colTasks.length}{col.wipLimit ? `/${col.wipLimit}` : ""}
+                </span>
+                <button
+                  onClick={() => toggleColCollapsed(col.key)}
+                  aria-label={`Свернуть колонку: ${col.label}`}
+                  title="Свернуть колонку"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground/50 transition-colors hover:text-foreground"
+                >
+                  <ChevronsRightLeft className="h-3.5 w-3.5" />
+                </button>
+                {col.editable && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`Настроить колонку: ${col.label}`}
+                        title="Цвет и лимит WIP"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                      >
+                        <Settings2 className="h-3.5 w-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <p className="px-2 py-1 text-xs text-muted-foreground">Цвет</p>
+                      <div className="flex flex-wrap gap-1.5 px-2 pb-2">
+                        {COLUMN_COLOR_ORDER.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            aria-label={COLUMN_COLORS[c].label}
+                            title={COLUMN_COLORS[c].label}
+                            onClick={() => setColumnColor(col.key, c)}
+                            className={cn(
+                              "h-5 w-5 rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                              COLUMN_COLORS[c].dot,
+                              columns.find((x) => x.id === col.key)?.color === c && "ring-2 ring-foreground ring-offset-1 ring-offset-background"
+                            )}
                           />
-                        </div>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                  {col.editable && columns.length > 1 && (
-                    <IconAction
-                      icon={X}
-                      label={`Удалить колонку: ${col.label}`}
-                      tone="danger"
-                      onClick={() => deleteColumn(col.key)}
-                      reveal
-                      className="ml-1 p-0.5"
-                    />
-                  )}
-                </div>
-                <div role="list" className="flex flex-col gap-2">
-                  {colTasks.map((t) => kanbanCard(t, col))}
-                  {colTasks.length === 0 && (
-                    <p className="rounded-lg border border-dashed border-border px-1 py-6 text-center text-xs text-muted-foreground">
-                      Перетащите сюда или добавьте ↓
-                    </p>
-                  )}
-                </div>
-                {/* Per-column quick-add — create a card straight into this column (with the column's
-                    property applied), no dragging. Hidden on «Готово». */}
-                {!col.noAdd && (
-                  <div className="flex items-center gap-1.5 rounded-md px-1.5 py-1">
-                    <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
-                    <input
-                      value={colAdd[col.key] ?? ""}
-                      onChange={(e) => setColAdd((m) => ({ ...m, [col.key]: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === "Enter") addToColumn(col, colAdd[col.key] ?? ""); }}
-                      placeholder="Карточка…"
-                      className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
-                    />
-                  </div>
+                        ))}
+                      </div>
+                      <DropdownMenuSeparator />
+                      <div className="px-2 py-1.5">
+                        <p className="mb-1 text-xs text-muted-foreground">Лимит WIP (0 — без лимита)</p>
+                        <Input
+                          type="number"
+                          min={0}
+                          className="h-8 text-xs"
+                          value={col.wipLimit ?? 0}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const n = Number(e.target.value) || 0;
+                            setColumnWip(col.key, n > 0 ? n : undefined);
+                          }}
+                        />
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {col.editable && columns.length > 1 && (
+                  <IconAction
+                    icon={X}
+                    label={`Удалить колонку: ${col.label}`}
+                    tone="danger"
+                    onClick={() => deleteColumn(col.key)}
+                    reveal
+                    className="ml-1 p-0.5"
+                  />
                 )}
               </div>
             );
-          })}
-        </div>
+          }}
+          renderFooter={(bc) => {
+            const col = byKey.get(bc.key)!;
+            // Per-column quick-add — create a card straight into this column (with the column's
+            // property applied), no dragging. Hidden on «Готово».
+            if (col.noAdd) return null;
+            return (
+              <div className="flex items-center gap-1.5 rounded-md px-1.5 py-1">
+                <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+                <input
+                  value={colAdd[col.key] ?? ""}
+                  onChange={(e) => setColAdd((m) => ({ ...m, [col.key]: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") addToColumn(col, colAdd[col.key] ?? ""); }}
+                  placeholder="Карточка…"
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+                />
+              </div>
+            );
+          }}
+        />
       </div>
     );
   }
@@ -1302,19 +1298,9 @@ export default function Tasks() {
   /** A task row wrapped as a free drag source + drop target for reordering (used by "По проектам"). */
   function draggableTaskRow(task: Task) {
     return (
-      <div
-        key={task.id}
-        draggable
-        onDragStart={(e) => e.dataTransfer.setData("application/x-task-reorder", task.id)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          const id = e.dataTransfer.getData("application/x-task-reorder");
-          if (id) { e.stopPropagation(); moveTaskBefore(id, task.id); }
-        }}
-        className="cursor-grab active:cursor-grabbing"
-      >
+      <DragRow key={task.id} id={task.id} data={{ type: "task" }}>
         {renderRow(task, false)}
-      </div>
+      </DragRow>
     );
   }
 
@@ -1343,6 +1329,11 @@ export default function Tasks() {
     }
 
     return (
+      <DragRowsContext
+        onDrop={(a, o) => { if (a.type === "task" && o.type === "task") moveTaskBefore(a.id, o.id); }}
+        renderOverlay={(a) => { const t = tasks.find((x) => x.id === a.id); return t ? renderRow(t, false) : null; }}
+        labelOf={(id) => tasks.find((x) => x.id === id)?.title ?? id}
+      >
       <div className="flex flex-col gap-2">
         {standaloneRows.map((r) => r.node)}
 
@@ -1381,6 +1372,7 @@ export default function Tasks() {
           );
         })}
       </div>
+      </DragRowsContext>
     );
   }
 
