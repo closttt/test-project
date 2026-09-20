@@ -37,7 +37,7 @@ export function AppLayout() {
     const GO: Record<string, string> = {
       d: "/", k: "/clients", p: "/projects", t: "/tasks", n: "/notes",
       c: "/calendar", a: "/achievements", s: "/settings",
-      y: "/analytics", r: "/archive",
+      y: "/analytics", r: "/archive", m: "/mail",
     };
     const onKey = (e: KeyboardEvent) => {
       // Ctrl/Cmd+Z — global undo, wins over the per-modifier bail-out below.

@@ -10,8 +10,10 @@ import { useUI } from "@/store/UIProvider";
 import { easeOut } from "@/lib/motion";
 import { isAiConfigured, streamChat, requestCompletion, type ChatMessage } from "@/lib/ai";
 import { buildAiContext } from "@/lib/aiContext";
-import { AI_TOOLS, dispatchToolCall, type AiToolContext } from "@/lib/aiTools";
+import { getAiTools, runToolCall, type AiToolContext } from "@/lib/aiTools";
 import { useToast } from "@/store/ToastProvider";
+import { isGmailConnected } from "@/lib/gmail";
+import { isNotionConnected } from "@/lib/notion";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/lib/markdown";
 
@@ -31,6 +33,14 @@ const QUICK_PROMPTS: { label: string; prompt: string }[] = [
   { label: "Разбери просроченные задачи", prompt: "Разбери просроченные задачи" },
   { label: "Итоги за неделю", prompt: "Итоги за неделю" },
   { label: "Создай задачу «Позвонить клиенту» на завтра", prompt: "Создай задачу «Позвонить клиенту» на завтра" },
+];
+
+/** Extra quick prompts that only make sense once the integration is connected. */
+const MAIL_PROMPTS: { label: string; prompt: string }[] = [
+  { label: "Что мне писали за неделю?", prompt: "Найди письма за последние 7 дней (newer_than:7d) и коротко перескажи, кто что писал и что требует ответа." },
+];
+const NOTION_PROMPTS: { label: string; prompt: string }[] = [
+  { label: "Итоги дня → в Notion", prompt: "Собери итоги дня: что закрыто сегодня, что просрочено, встречи — и создай страницу в Notion с этим содержимым." },
 ];
 
 interface Turn {
@@ -96,7 +106,7 @@ export function AiAssistant() {
       // Tools are always offered — the model decides whether the request needs one. This first
       // call is non-streaming (tool-call arguments arrive as one parsed JSON object, not SSE
       // fragments); if no tool was needed, its own text is the final answer, shown immediately.
-      const decision = await requestCompletion(baseMessages, AI_TOOLS, controller.signal);
+      const decision = await requestCompletion(baseMessages, getAiTools(), controller.signal);
 
       if (decision.toolCalls && decision.toolCalls.length > 0) {
         const assistantToolMsg: ChatMessage = {
@@ -107,15 +117,18 @@ export function AiAssistant() {
           // which then makes the follow-up request fail with a 400.
           tool_calls: decision.rawToolCalls,
         };
-        const toolResultMsgs: ChatMessage[] = decision.toolCalls.map((call) => {
-          const result = dispatchToolCall(toolCtx, call);
+        // Sequential on purpose: integration tools hit the network, and the order of toasts /
+        // undo entries should follow the order the model asked for.
+        const toolResultMsgs: ChatMessage[] = [];
+        for (const call of decision.toolCalls) {
+          const result = await runToolCall(toolCtx, call);
           // Undo runs through the SAME global stack every manual action uses — an AI-made
           // change is exactly as safe to make as a manual one (Ctrl+Z or the toast button).
           if (result.toastLabel) {
             toast(result.toastLabel, result.undoRun ? { actionLabel: "Вернуть", onAction: result.undoRun } : undefined);
           }
-          return { role: "tool", tool_call_id: call.id, content: result.resultText };
-        });
+          toolResultMsgs.push({ role: "tool", tool_call_id: call.id, content: result.resultText });
+        }
 
         let acc = "";
         for await (const delta of streamChat([...baseMessages, assistantToolMsg, ...toolResultMsgs], controller.signal)) {
@@ -161,7 +174,7 @@ export function AiAssistant() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">AI-ассистент</p>
-                <p className="truncate text-xs text-muted-foreground">Может создавать и менять задачи, проекты, заметки</p>
+                <p className="truncate text-xs text-muted-foreground">Задачи, проекты, заметки · Notion · почта</p>
               </div>
               {turns.length > 0 && (
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setTurns([])} title="Очистить">
@@ -189,7 +202,7 @@ export function AiAssistant() {
                   <div className="border-b border-border p-3">
                     <p className="mb-2 text-xs text-muted-foreground">Быстрые вопросы:</p>
                     <div className="flex flex-wrap gap-2">
-                      {QUICK_PROMPTS.map((p) => (
+                      {[...QUICK_PROMPTS, ...(isGmailConnected() ? MAIL_PROMPTS : []), ...(isNotionConnected() ? NOTION_PROMPTS : [])].map((p) => (
                         <button
                           key={p.label}
                           onClick={() => send(p.prompt)}

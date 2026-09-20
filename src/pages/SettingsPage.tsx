@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Moon, Sun, AlertTriangle, Trash2, Download, Upload, Bell, Trophy, Timer, Volume2, LayoutList, GripVertical, RotateCcw, FileSpreadsheet, Bot, Eye, EyeOff, CalendarClock, RefreshCw, Cloud } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
+import { IntegrationsCard } from "@/components/IntegrationsCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -400,6 +401,10 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </StaggerItem>
+
+        <StaggerItem>
+          <IntegrationsCard />
         </StaggerItem>
 
         <StaggerItem>
