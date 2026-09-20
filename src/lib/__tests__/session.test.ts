@@ -11,19 +11,21 @@ import {
   setSessionCookie,
   SESSION_COOKIE,
 } from "../../../api/_lib/session";
-import loginHandler from "../../../api/auth/login";
-import statusHandler from "../../../api/auth/status";
+// login / logout / status share one function behind a dynamic segment (Hobby plan caps a
+// deployment at 12 serverless functions), so the action comes in as req.query.action.
+import authHandler from "../../../api/auth/[action]";
 
 /** Just enough of Vercel's req/res for the auth functions. */
-function fakeReq(over: { method?: string; body?: unknown; cookie?: string; https?: boolean } = {}) {
+function fakeReq(over: { method?: string; body?: unknown; cookie?: string; https?: boolean; action?: string } = {}) {
   return {
     method: over.method ?? "GET",
     body: over.body,
+    query: { action: over.action ?? "status" },
     headers: {
       ...(over.cookie ? { cookie: over.cookie } : {}),
       ...(over.https ? { "x-forwarded-proto": "https" } : {}),
     },
-  } as unknown as Parameters<typeof loginHandler>[0];
+  } as unknown as Parameters<typeof authHandler>[0];
 }
 
 function fakeRes() {
@@ -34,7 +36,7 @@ function fakeRes() {
     setHeader(k: string, v: string) { out.headers[k] = v; return res; },
     end() { return res; },
   };
-  return { res: res as unknown as Parameters<typeof loginHandler>[1], out };
+  return { res: res as unknown as Parameters<typeof authHandler>[1], out };
 }
 
 describe("app session (plan B0)", () => {
@@ -93,21 +95,21 @@ describe("app session (plan B0)", () => {
 
   it("login: wrong password → 401, right password → cookie; status reflects it", async () => {
     const bad = fakeRes();
-    await loginHandler(fakeReq({ method: "POST", body: { password: "nope" } }), bad.res);
+    await authHandler(fakeReq({ action: "login", method: "POST", body: { password: "nope" } }), bad.res);
     expect(bad.out.status).toBe(401);
     expect(bad.out.headers["Set-Cookie"]).toBeUndefined();
 
     const good = fakeRes();
-    await loginHandler(fakeReq({ method: "POST", body: JSON.stringify({ password: "secret-pass" }) }), good.res);
+    await authHandler(fakeReq({ action: "login", method: "POST", body: JSON.stringify({ password: "secret-pass" }) }), good.res);
     expect(good.out.status).toBe(200);
     const cookie = good.out.headers["Set-Cookie"].split(";")[0];
 
     const st = fakeRes();
-    statusHandler(fakeReq({ cookie }), st.res);
+    await authHandler(fakeReq({ action: "status", cookie }), st.res);
     expect(st.out.body).toEqual({ required: true, authenticated: true });
 
     const anon = fakeRes();
-    statusHandler(fakeReq(), anon.res);
+    await authHandler(fakeReq({ action: "status" }), anon.res);
     expect(anon.out.body).toEqual({ required: true, authenticated: false });
   });
 
