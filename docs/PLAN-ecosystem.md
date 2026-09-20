@@ -78,6 +78,25 @@
 
 Порядок: A3 (мелкое, 1 подход) → A2 → A1.
 
+### Статус потока A (2026-09-20) — сделано
+
+- A3 ✓ `FilePreviewDialog` — файлы проекта/задачи открываются внутри приложения.
+- A2 ✓ `components/kanban/KanbanBoard` (dnd-kit), `components/dnd/DragRows`, `lib/taskOrder`;
+  ProjectDetail: drag при любой сортировке → авто-переключение на «Как есть».
+- A1 ✓ `lib/library.ts`, `components/library/*`, вкладка «Библиотека» в /knowledge, мост
+  «→ в Библиотеку» с телеграм-карточек, `api/unfurl.ts` (og:title/og:image по ссылке).
+- Идеи ✓ Share Target (`manifest.webmanifest` → /knowledge?url=…), глобальный поиск
+  (группа «Библиотека» в палитре), виджет «Прочитать сегодня» на дашборде.
+
+Что нужно от владельца: выполнить `supabase/library_items.sql` в Supabase SQL Editor (до этого
+библиотека работает локально в браузере и показывает жёлтую плашку). `api/unfurl.ts` подхватится
+Vercel автоматически; локально в dev его нет — кнопка «Заполнить» просто ничего не подтянет.
+
+Осталось (делает тот чат, который владеет `aiTools.ts`, т.е. B): инструмент ассистента
+`save_to_library(url|title, type?, notes?)` — одна запись в `AI_TOOLS` + ветка в
+`dispatchToolCall`, вызывающая `addLibraryItem(await fetchLibrary(), newDraft(url))` из
+`@/lib/library`. Всё остальное для этого уже есть.
+
 ---
 
 ## Поток B — второй чат: Gmail + Notion + ассистент

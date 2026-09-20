@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookMarked, ExternalLink, RefreshCw, Search, List, LayoutGrid, Trash2, X, ImageIcon, Link2, FolderTree, CalendarDays, Plus, GripVertical } from "lucide-react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { BookMarked, ExternalLink, RefreshCw, Search, List, LayoutGrid, Trash2, X, ImageIcon, Link2, FolderTree, CalendarDays, Plus, GripVertical, Library as LibraryIcon } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -22,7 +23,10 @@ import { cn } from "@/lib/utils";
 import { isSupabaseConfigured, fetchKnowledgeCards, deleteKnowledgeCard, updateKnowledgeCardSource } from "@/lib/supabase";
 import { ShimmerSkeleton } from "@/components/unlumen-ui/shimmer-skeleton";
 import { ProgressiveBlur } from "@/components/unlumen-ui/progressive-blur";
-import { extractLinks, linkColor, linkMonogram, faviconUrl } from "@/lib/links";
+import { extractLinks, linkColor, linkMonogram, faviconUrl, prettyDomain } from "@/lib/links";
+import { LibraryPanel } from "@/components/library/LibraryPanel";
+import { useLibrary } from "@/components/library/useLibrary";
+import { newDraft, detectType, type LibraryDraft } from "@/lib/library";
 import {
   fetchShelf,
   addLinks,
@@ -53,6 +57,7 @@ const POLL_MS = 60_000;
 type ViewMode = "cards" | "table";
 type SortMode = "newest" | "oldest" | "title" | "titleDesc" | "image";
 type GroupMode = "date" | "category";
+type KnowledgeTab = "cards" | "library" | "links";
 
 function NotConfigured() {
   return (
@@ -165,8 +170,50 @@ export default function Knowledge() {
   // Client-side category ("раздел") overrides per card — one level of hierarchy over flat tags.
   const [categories, setCategories] = useState<CategoryOverrides>(() => loadCategoryOverrides());
   const [categoryDraft, setCategoryDraft] = useState("");
-  // «Ссылки» — своя полка для произвольных ссылок, отдельно от карточек из Telegram.
-  const [tab, setTab] = useState<"cards" | "links">("cards");
+  // Три раздела: карточки из Telegram, «Библиотека» (свой каталог с заметками), полка ссылок.
+  // Deep links: location.state.tab / openLibraryId (палитра, дашборд) и ?share (Share Target с телефона).
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const navState = (location.state ?? {}) as { tab?: KnowledgeTab; openLibraryId?: string };
+  // Web Share Target (manifest.webmanifest) lands here as /knowledge?title=&text=&url= .
+  const isShare = ["url", "text", "title"].some((k) => searchParams.has(k));
+  const [tab, setTab] = useState<KnowledgeTab>(() => (isShare ? "library" : navState.tab ?? "cards"));
+  const lib = useLibrary();
+  const [libOpenId, setLibOpenId] = useState<string | null>(navState.openLibraryId ?? null);
+  const [pendingDraft, setPendingDraft] = useState<LibraryDraft | null>(() => {
+    if (!isShare) return null;
+    // Android puts the link into `text`, iOS into `url` — look in both.
+    const d = newDraft([searchParams.get("url"), searchParams.get("text")].filter(Boolean).join(" "));
+    const title = searchParams.get("title")?.trim();
+    if (title && !d.url) d.title = title;
+    return d;
+  });
+  useEffect(() => {
+    // Consume the one-shot state so back/forward doesn't re-open things.
+    if (isShare || navState.tab || navState.openLibraryId) navigate("/knowledge", { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** A Telegram card becomes a library item: title, text, picture and tags carry over, the card stays. */
+  function toLibrary(c: KnowledgeCard) {
+    const d = newDraft(c.description ?? "");
+    d.title = c.title;
+    d.description = c.description?.slice(0, 600) || undefined;
+    d.coverUrl = c.imageUrl;
+    d.tags = [...c.tags];
+    d.sourceCardId = c.id;
+    if (!d.url && c.sourceUrl) { d.url = c.sourceUrl; d.domain = prettyDomain(c.sourceUrl); }
+    d.type = d.url ? detectType(d.url) : "article";
+    lib.add(d).then((item) => {
+      if (!item) return;
+      toast(`В библиотеке: ${item.title}`, {
+        actionLabel: "Открыть",
+        onAction: () => { setOpened(null); setTab("library"); setLibOpenId(item.id); },
+      });
+    });
+  }
+  const inLibrary = (c: KnowledgeCard) => lib.items.some((i) => i.sourceCardId === c.id);
   const [shelf, setShelf] = useState<LinkShelf>({ sections: [], links: [] });
   const [shelfBusy, setShelfBusy] = useState(false);
   const [shelfError, setShelfError] = useState<string | null>(null);
@@ -438,6 +485,9 @@ export default function Knowledge() {
             <ExternalLink className="h-4 w-4" />
           </a>
         )}
+        {!inLibrary(c) && (
+          <IconAction icon={LibraryIcon} label={`В библиотеку: ${c.title}`} onClick={() => toLibrary(c)} reveal className="p-1" iconClassName="h-4 w-4" />
+        )}
         <IconAction
           icon={Trash2}
           label={`Удалить карточку: ${c.title}`}
@@ -674,7 +724,7 @@ export default function Knowledge() {
   return (
     <AppShell
       title="База знаний"
-      description="Карточки из Telegram + своя полка ссылок"
+      description="Карточки из Telegram · Библиотека с заметками · полка ссылок"
       actions={
         configured && tab === "cards" ? (
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
@@ -690,11 +740,19 @@ export default function Knowledge() {
         onChange={setTab}
         options={[
           { value: "cards", label: <><BookMarked className="h-3.5 w-3.5" /> Карточки</> },
+          { value: "library", label: <><LibraryIcon className="h-3.5 w-3.5" /> Библиотека{lib.items.length > 0 && <span className="ml-1 tabular-nums text-muted-foreground">{lib.items.length}</span>}</> },
           { value: "links", label: <><Link2 className="h-3.5 w-3.5" /> Ссылки</> },
         ]}
       />
 
-      {tab === "links" ? (
+      {tab === "library" ? (
+        <LibraryPanel
+          lib={lib}
+          openId={libOpenId}
+          pendingDraft={pendingDraft}
+          onConsumed={() => { setLibOpenId(null); setPendingDraft(null); }}
+        />
+      ) : tab === "links" ? (
         renderLinksPanel()
       ) : !configured ? (
         <NotConfigured />
@@ -940,9 +998,14 @@ export default function Knowledge() {
                     </p>
                   </div>
                 )}
-                <Button variant="ghost" size="sm" className="w-fit text-risk hover:text-risk" onClick={() => handleDelete(opened)}>
-                  <Trash2 className="h-4 w-4" /> Удалить карточку
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toLibrary(opened)} disabled={inLibrary(opened)}>
+                    <LibraryIcon className="h-4 w-4" /> {inLibrary(opened) ? "Уже в библиотеке" : "В библиотеку"}
+                  </Button>
+                  <Button variant="ghost" size="sm" className="ml-auto w-fit text-risk hover:text-risk" onClick={() => handleDelete(opened)}>
+                    <Trash2 className="h-4 w-4" /> Удалить карточку
+                  </Button>
+                </div>
               </div>
             </>
           )}

@@ -8,6 +8,11 @@
   "background_color": "#0a0a0a",
   "theme_color": "#0a0a0a",
   "lang": "ru",
+  "share_target": {
+    "action": "/knowledge",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  },
   "icons": [
     { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
     { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "maskable" }

@@ -18,6 +18,7 @@ export const WIDGETS: WidgetMeta[] = [
   { id: "meetings", title: "Встречи" },
   { id: "note", title: "Быстрая заметка" },
   { id: "projects", title: "Проекты" },
+  { id: "reading", title: "Прочитать сегодня" },
 ];
 
 export const DEFAULT_LAYOUT: Layout[] = [
@@ -31,6 +32,7 @@ export const DEFAULT_LAYOUT: Layout[] = [
   { i: "meetings", x: 0, y: 15, w: 4, h: 5, minW: 3, minH: 4 },
   { i: "note", x: 4, y: 15, w: 4, h: 5, minW: 3, minH: 4 },
   { i: "projects", x: 8, y: 15, w: 4, h: 5, minW: 3, minH: 4 },
+  { i: "reading", x: 0, y: 20, w: 4, h: 5, minW: 3, minH: 4 },
 ];
 
 const LAYOUT_KEY = "crm-dashboard-layout-v1";

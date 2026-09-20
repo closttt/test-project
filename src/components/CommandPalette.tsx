@@ -42,7 +42,8 @@ import { getRecent } from "@/lib/recent";
 import { isToday, todayStr, addDays, dueLabel } from "@/lib/format";
 import { parseNaturalInput } from "@/lib/nlp";
 import { PRIORITY_META, type Task, type Priority } from "@/types";
-import { Clock, Check } from "lucide-react";
+import { Clock, Check, Library } from "lucide-react";
+import { fetchLibrary, LIBRARY_TYPES, type LibraryItem } from "@/lib/library";
 
 const NAV = [
   { to: "/", label: "Дашборд", icon: LayoutDashboard },
@@ -67,6 +68,13 @@ export function CommandPalette() {
   const { toast } = useToast();
   const pomodoro = usePomodoro();
   const [search, setSearch] = useState("");
+  // «Библиотека» lives outside AppData (Supabase / localStorage), so it's loaded when the palette
+  // opens — one cheap read, and the global search covers books/articles/videos too.
+  const [library, setLibrary] = useState<LibraryItem[]>([]);
+  useEffect(() => {
+    if (!commandOpen) return;
+    fetchLibrary().then(setLibrary).catch(() => fetchLibrary().then(setLibrary).catch(() => {}));
+  }, [commandOpen]);
   // Nested actions: selecting a task's chevron swaps the list to a compact action set
   // (priority/due) instead of leaving the palette — Linear-style "→ drill in".
   const [taskAction, setTaskAction] = useState<Task | null>(null);
@@ -325,6 +333,22 @@ export function CommandPalette() {
               <CommandItem key={n.id} value={`note ${n.title} ${n.body.slice(0, 140)} ${n.tags.join(" ")}`} onSelect={() => go("/notes", { openNoteId: n.id })}>
                 <StickyNote />
                 {n.title || "Без названия"}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+
+        {library.length > 0 && (
+          <CommandGroup heading="Библиотека">
+            {(search.trim() ? library : library.slice(0, 6)).map((i) => (
+              <CommandItem
+                key={i.id}
+                value={`library библиотека ${i.title} ${i.author ?? ""} ${i.tags.join(" ")} ${i.notes.slice(0, 120)}`}
+                onSelect={() => go("/knowledge", { tab: "library", openLibraryId: i.id })}
+              >
+                <Library />
+                <span className="min-w-0 flex-1 truncate">{i.title}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{LIBRARY_TYPES[i.type].label}</span>
               </CommandItem>
             ))}
           </CommandGroup>

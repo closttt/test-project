@@ -67,6 +67,7 @@ import { parseNaturalInput } from "@/lib/nlp";
 import { pushUndo } from "@/lib/undoStack";
 import { cn } from "@/lib/utils";
 import { PRIORITY_META, type Priority, type Task } from "@/types";
+import { ReadingWidget } from "@/components/library/ReadingWidget";
 import {
   WIDGETS,
   loadLayout,
@@ -491,6 +492,8 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         );
+      case "reading":
+        return <ReadingWidget />;
       case "projects":
         return (
           <Card className="flex h-full flex-col">
