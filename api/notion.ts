@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { jsonBody, requireSession } from "./_lib/session";
+import { jsonBody, requireSession } from "./_lib/session.js";
 
 /**
  * Notion proxy (plan B2). One Internal Integration token lives in `NOTION_TOKEN` on the server;

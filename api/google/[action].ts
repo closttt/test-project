@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { isAuthenticated, requireSession } from "../_lib/session";
+import { isAuthenticated, requireSession } from "../_lib/session.js";
 import {
   GOOGLE_SCOPES,
   exchangeCode,
@@ -11,7 +11,7 @@ import {
   revokeAndForget,
   saveTokens,
   verifyState,
-} from "../_lib/google";
+} from "../_lib/google.js";
 
 /**
  * The Google OAuth dance in ONE serverless function: /api/google/auth, /callback, /disconnect.

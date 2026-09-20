@@ -9,7 +9,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 export default async function handler(_req: VercelRequest, res: VercelResponse): Promise<void> {
   const out: Record<string, unknown> = { node: process.version, cwd: process.cwd() };
   try {
-    const mod = await import("./_lib/session");
+    const mod = await import("./_lib/session.js");
     out.sharedImport = "ok";
     out.authRequired = mod.authRequired();
   } catch (e) {

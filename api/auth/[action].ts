@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { authRequired, checkPassword, clearSessionCookie, isAuthenticated, issueToken, jsonBody, setSessionCookie } from "../_lib/session";
+import { authRequired, checkPassword, clearSessionCookie, isAuthenticated, issueToken, jsonBody, setSessionCookie } from "../_lib/session.js";
 
 /**
  * All three session endpoints in ONE serverless function: /api/auth/login, /logout, /status.

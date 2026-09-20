@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { jsonBody, requireSession } from "../_lib/session";
-import { NotConnectedError, describeGmailFailure, getAccessToken, gmail, googleConfigured } from "../_lib/google";
-import { parseMessage, type GmailMessage } from "../_lib/mail";
+import { jsonBody, requireSession } from "../_lib/session.js";
+import { NotConnectedError, describeGmailFailure, getAccessToken, gmail, googleConfigured } from "../_lib/google.js";
+import { parseMessage, type GmailMessage } from "../_lib/mail.js";
 
 /**
  * Every Gmail endpoint in ONE serverless function: /api/gmail/status, /threads, /thread, /modify,
