@@ -2,6 +2,8 @@ import { isOverdue, isToday, formatDuration, localDayStr, addDays } from "@/lib/
 import { levelProgress } from "@/lib/gamification";
 import { PRIORITY_META } from "@/types";
 import type { useData } from "@/store/DataProvider";
+import { cachedUnread, gmailAccountEmail, isGmailConnected } from "@/lib/gmail";
+import { isNotionConnected, loadNotionTarget } from "@/lib/notion";
 
 type Ctx = ReturnType<typeof useData>;
 
@@ -68,6 +70,24 @@ export function buildAiContext(ctx: Ctx): string {
     `Помодоро: ${settings.pomodoro.workMin} мин работы / ${settings.pomodoro.shortBreakMin} мин короткий перерыв / ${settings.pomodoro.longBreakMin} мин длинный перерыв каждые ${settings.pomodoro.roundsBeforeLong} циклов.`,
   ].filter(Boolean);
 
+  // What the assistant can reach beyond the local store (plan B3) — stated explicitly so the
+  // model reaches for search_mail / notion_* instead of saying it has no access.
+  const integrationLines: string[] = [];
+  if (isGmailConnected()) {
+    const unread = cachedUnread();
+    integrationLines.push(
+      `Gmail подключён (${gmailAccountEmail() ?? "аккаунт Google"})${unread !== null ? `, непрочитанных цепочек во входящих: ${unread}` : ""}. ` +
+        "Инструменты search_mail / read_thread читают почту; задачу из письма создавай через create_task с link на письмо."
+    );
+  }
+  if (isNotionConnected()) {
+    const target = loadNotionTarget();
+    integrationLines.push(
+      `Notion подключён${target ? `, место по умолчанию — «${target.title}»` : ", место по умолчанию не выбрано"}. ` +
+        "Инструменты notion_create_page / notion_append / notion_search."
+    );
+  }
+
   return [
     "Ты — ассистент личного таск-менеджера пользователя. Отвечай кратко, по-русски, по делу, опираясь на данные ниже.",
     "",
@@ -92,6 +112,7 @@ export function buildAiContext(ctx: Ctx): string {
     meetingLines.length ? `## Предстоящие встречи\n${meetingLines.join("\n")}` : "",
     `## Параметры планирования\n${planningLines.join("\n")}`,
     projectLines.length ? `## Проекты\n${projectLines.join("\n")}` : "",
+    integrationLines.length ? `## Интеграции\n${integrationLines.map((l) => `- ${l}`).join("\n")}` : "",
     recentNotes.length ? `## Последние заметки\n${recentNotes.join("\n")}` : "",
   ].filter(Boolean).join("\n");
 }

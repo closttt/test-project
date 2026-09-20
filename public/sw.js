@@ -19,7 +19,10 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  if (request.method !== "GET" || new URL(request.url).origin !== self.location.origin) return;
+  const url = new URL(request.url);
+  if (request.method !== "GET" || url.origin !== self.location.origin) return;
+  // Serverless functions are live data (auth status, mail, Notion) — never serve them from cache.
+  if (url.pathname.startsWith("/api/")) return;
 
   // Navigations: try network, fall back to cached shell (offline).
   if (request.mode === "navigate") {

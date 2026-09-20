@@ -17,6 +17,7 @@ const Changelog = lazy(() => import("@/pages/Changelog"));
 const Analytics = lazy(() => import("@/pages/Analytics"));
 const Archive = lazy(() => import("@/pages/Archive"));
 const Knowledge = lazy(() => import("@/pages/Knowledge"));
+const Mail = lazy(() => import("@/pages/Mail"));
 
 function PageFallback() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/archive" element={<Archive />} />
           <Route path="/knowledge" element={<Knowledge />} />
+          <Route path="/mail" element={<Mail />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/achievements" element={<Achievements />} />
           <Route path="/changelog" element={<Changelog />} />

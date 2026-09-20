@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 
 import App from "@/App";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AuthGate } from "@/components/AuthGate";
 import { DataProvider } from "@/store/DataProvider";
 import { UIProvider } from "@/store/UIProvider";
 import { ToastProvider } from "@/store/ToastProvider";
@@ -22,6 +23,7 @@ const Agentation = import.meta.env.DEV
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
+      <AuthGate>
       <BrowserRouter>
         <DataProvider>
           <UIProvider>
@@ -39,6 +41,7 @@ createRoot(document.getElementById("root")!).render(
           </UIProvider>
         </DataProvider>
       </BrowserRouter>
+      </AuthGate>
     </ErrorBoundary>
   </StrictMode>
 );

@@ -12,6 +12,7 @@ import {
   Archive,
   Settings,
   BookMarked,
+  Mail,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ import { computeStreak } from "@/lib/gameStats";
 import { StreakFlame } from "@/components/StreakFlame";
 import { levelTitle } from "@/types";
 import { NAV_ITEMS, loadNavOrder, loadNavHidden } from "@/lib/navConfig";
+import { useGmailUnread } from "@/lib/gmail";
 
 const ICONS: Record<string, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
@@ -30,6 +32,7 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   tasks: CheckSquare,
   notes: StickyNote,
   calendar: CalendarDays,
+  mail: Mail,
   analytics: BarChart3,
   knowledge: BookMarked,
   archive: Archive,
@@ -96,6 +99,8 @@ export function Sidebar() {
   const streakAtRisk = streak >= 2 && !completionLog[todayStr()];
   const [order, setOrder] = useState(() => loadNavOrder());
   const [hidden, setHidden] = useState(() => loadNavHidden());
+  // Unread mail badge — null until Gmail is connected, so the item stays plain otherwise.
+  const unreadMail = useGmailUnread();
 
   useEffect(() => {
     const onChange = () => {
@@ -120,7 +125,7 @@ export function Sidebar() {
       label: n.label,
       icon: ICONS[n.id],
       end: n.id === "dashboard",
-      badge: n.id === "tasks" ? todayCount : undefined,
+      badge: n.id === "tasks" ? todayCount : n.id === "mail" ? unreadMail ?? undefined : undefined,
     }));
 
   return (
