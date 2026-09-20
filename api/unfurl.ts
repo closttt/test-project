@@ -29,18 +29,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
+  // oEmbed first where the site publishes it: YouTube in particular serves a consent/app shell to
+  // link-preview bots and no Open Graph at all, so scraping it returns an empty object.
+  const viaOembed = await tryOembed(target);
+  if (viaOembed?.title) {
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.status(200).json(viaOembed);
+    return;
+  }
+
   let html = "";
   try {
-    const upstream = await fetch(target, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(8000),
-      headers: {
-        // Some sites serve richer OG tags to link-preview bots than to browsers.
-        "User-Agent": "Mozilla/5.0 (compatible; WorkdeskBot/1.0; +https://vercel.com) facebookexternalhit/1.1",
-        Accept: "text/html,application/xhtml+xml",
-        "Accept-Language": "ru,en;q=0.8",
-      },
-    });
+    const upstream = await fetchPage(target, BOT_UA);
     const type = upstream.headers.get("content-type") ?? "";
     if (!type.includes("html")) {
       res.setHeader("Cache-Control", "public, max-age=3600");
@@ -48,6 +48,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
     html = await readHead(upstream, 512 * 1024);
+    // Some sites answer bots with a stub and real markup to browsers — one retry, then give up.
+    if (!/og:title|<title/i.test(html)) {
+      const retry = await fetchPage(target, BROWSER_UA);
+      if ((retry.headers.get("content-type") ?? "").includes("html")) html = await readHead(retry, 512 * 1024);
+    }
   } catch (e) {
     res.status(502).json({ error: `Не удалось загрузить страницу: ${e instanceof Error ? e.message : String(e)}` });
     return;
@@ -76,6 +81,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.status(200).json({ title, description, image, siteName, author });
+}
+
+const BOT_UA = "Mozilla/5.0 (compatible; WorkdeskBot/1.0; +https://vercel.com) facebookexternalhit/1.1";
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36";
+
+function fetchPage(target: URL, ua: string): Promise<Response> {
+  return fetch(target, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(8000),
+    headers: { "User-Agent": ua, Accept: "text/html,application/xhtml+xml", "Accept-Language": "ru,en;q=0.8" },
+  });
+}
+
+/** Sites whose oEmbed endpoint is stable and needs no key — title/author/thumbnail in one hop. */
+const OEMBED: { test: RegExp; endpoint: string }[] = [
+  { test: /(^|\.)(youtube\.com|youtu\.be)$/i, endpoint: "https://www.youtube.com/oembed?format=json&url=" },
+  { test: /(^|\.)vimeo\.com$/i, endpoint: "https://vimeo.com/api/oembed.json?url=" },
+  { test: /(^|\.)(spotify\.com)$/i, endpoint: "https://open.spotify.com/oembed?url=" },
+  { test: /(^|\.)soundcloud\.com$/i, endpoint: "https://soundcloud.com/oembed?format=json&url=" },
+];
+
+interface OembedResponse {
+  title?: string;
+  author_name?: string;
+  provider_name?: string;
+  thumbnail_url?: string;
+  description?: string;
+}
+
+async function tryOembed(target: URL): Promise<Record<string, string | undefined> | null> {
+  const hit = OEMBED.find((o) => o.test.test(target.hostname));
+  if (!hit) return null;
+  try {
+    const r = await fetch(hit.endpoint + encodeURIComponent(target.toString()), {
+      signal: AbortSignal.timeout(6000),
+      headers: { "User-Agent": BOT_UA, Accept: "application/json" },
+    });
+    if (!r.ok) return null;
+    const d = (await r.json()) as OembedResponse;
+    if (!d?.title) return null;
+    return {
+      title: d.title,
+      description: d.description,
+      image: d.thumbnail_url,
+      siteName: d.provider_name,
+      author: d.author_name,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function readHead(response: Response, limit: number): Promise<string> {
