@@ -43,7 +43,12 @@ beforeEach(() => {
 
 describe("getAiTools", () => {
   it("offers integration tools only when the integration is connected", () => {
-    expect(getAiTools().map((t) => t.function.name)).toEqual(AI_TOOLS.map((t) => t.function.name));
+    // Local + library tools are always on the list: the library works off localStorage too, so
+    // there is no «connected» state to gate it on.
+    const base = getAiTools().map((t) => t.function.name);
+    expect(base).toEqual([...AI_TOOLS.map((t) => t.function.name), "library_add", "library_search", "library_update"]);
+    expect(base).not.toContain("notion_create_page");
+    expect(base).not.toContain("search_mail");
     vi.mocked(notion.isNotionConnected).mockReturnValue(true);
     vi.mocked(gmail.isGmailConnected).mockReturnValue(true);
     const names = getAiTools().map((t) => t.function.name);

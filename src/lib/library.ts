@@ -62,6 +62,65 @@ export const LIBRARY_STATUSES: Record<LibraryStatus, { label: string }> = {
 
 export const LIBRARY_STATUS_ORDER: LibraryStatus[] = ["want", "doing", "done"];
 
+/**
+ * Note skeletons per type. A library entry with an empty notes field is just a bookmark — the
+ * template asks the three questions worth answering about anything you consume, phrased for the
+ * medium. Used when an item is created without notes (by hand or by the assistant), so there is
+ * always something to fill in rather than a blank box.
+ */
+export const LIBRARY_NOTE_TEMPLATES: Record<LibraryType, string> = {
+  book: `## Зачем читаю
+
+## Ключевые идеи
+-
+
+## Что применить
+-`,
+  article: `## О чём
+
+## Что забрать
+-
+
+## Куда применить
+-`,
+  video: `## О чём
+
+## Тайм-коды
+-
+
+## Что попробовать
+-`,
+  podcast: `## Выпуск о чём
+
+## Мысли гостя
+-
+
+## Что проверить
+-`,
+  course: `## Чему учит
+
+## Модули
+-
+
+## Практика
+-`,
+  tool: `## Что делает
+
+## Где пригодится
+-
+
+## Альтернативы
+-`,
+  other: `## О чём
+
+## Что забрать
+-`,
+};
+
+export function noteTemplate(type: LibraryType): string {
+  return LIBRARY_NOTE_TEMPLATES[type] ?? LIBRARY_NOTE_TEMPLATES.other;
+}
+
 /** Type guess from the link's host — the user can always override it in the form. */
 export function detectType(url: string | undefined): LibraryType {
   if (!url) return "book";
@@ -182,6 +241,36 @@ function writeLocal(items: LibraryItem[]): LibraryItem[] {
   return items;
 }
 
+/**
+ * Last known list, kept so callers that can't await — the AI system prompt is built synchronously —
+ * still see the library. Every read and write below refreshes it, and `ensureLibrary()` fills it
+ * the first time.
+ */
+let snapshot: LibraryItem[] = [];
+let loaded = false;
+
+function remember(items: LibraryItem[]): LibraryItem[] {
+  snapshot = items;
+  loaded = true;
+  return items;
+}
+
+/** The cached list — possibly empty if nothing has loaded it yet. Never throws, never fetches. */
+export function librarySnapshot(): LibraryItem[] {
+  return snapshot;
+}
+
+/** Fetches once, then serves the cache. Falls back to whatever is cached if the fetch fails. */
+export async function ensureLibrary(force = false): Promise<LibraryItem[]> {
+  if (loaded && !force) return snapshot;
+  try {
+    return await fetchLibrary();
+  } catch {
+    loaded = true;
+    return snapshot;
+  }
+}
+
 interface Row {
   id: string;
   type: LibraryType;
@@ -241,13 +330,13 @@ const toRow = (d: Partial<LibraryDraft>): Partial<Omit<Row, "id" | "created_at">
 
 export async function fetchLibrary(): Promise<LibraryItem[]> {
   const client = db();
-  if (!client) return readLocal();
+  if (!client) return remember(readLocal());
   const { data, error } = await client.from("library_items").select("*").order("created_at", { ascending: false });
   if (error) {
     cloudDown = true;
     throw new LibraryNotMigratedError();
   }
-  return (data as Row[]).map(fromRow);
+  return remember((data as Row[]).map(fromRow));
 }
 
 export async function addLibraryItem(items: LibraryItem[], draft: LibraryDraft): Promise<{ items: LibraryItem[]; item: LibraryItem }> {
@@ -255,41 +344,41 @@ export async function addLibraryItem(items: LibraryItem[], draft: LibraryDraft):
   const client = db();
   if (!client) {
     const item: LibraryItem = { ...draft, id: uid(), createdAt: now, updatedAt: now };
-    return { items: writeLocal([item, ...items]), item };
+    return { items: remember(writeLocal([item, ...items])), item };
   }
   const { data, error } = await client.from("library_items").insert(toRow(draft)).select().single();
   if (error) throw new Error(error.message);
   const item = fromRow(data as Row);
-  return { items: [item, ...items], item };
+  return { items: remember([item, ...items]), item };
 }
 
 export async function updateLibraryItem(items: LibraryItem[], id: string, patch: Partial<LibraryDraft>): Promise<LibraryItem[]> {
   const now = new Date().toISOString();
   const next = items.map((i) => (i.id === id ? { ...i, ...patch, updatedAt: now } : i));
   const client = db();
-  if (!client) return writeLocal(next);
+  if (!client) return remember(writeLocal(next));
   const { error } = await client.from("library_items").update(toRow(patch)).eq("id", id);
   if (error) throw new Error(error.message);
-  return next;
+  return remember(next);
 }
 
 export async function removeLibraryItem(items: LibraryItem[], id: string): Promise<LibraryItem[]> {
   const next = items.filter((i) => i.id !== id);
   const client = db();
-  if (!client) return writeLocal(next);
+  if (!client) return remember(writeLocal(next));
   const { error } = await client.from("library_items").delete().eq("id", id);
   if (error) throw new Error(error.message);
-  return next;
+  return remember(next);
 }
 
 /** Re-inserts a deleted item under its old id (undo). */
 export async function restoreLibraryItem(items: LibraryItem[], item: LibraryItem): Promise<LibraryItem[]> {
   const next = [item, ...items.filter((i) => i.id !== item.id)];
   const client = db();
-  if (!client) return writeLocal(next);
+  if (!client) return remember(writeLocal(next));
   const { error } = await client.from("library_items").insert({ id: item.id, created_at: item.createdAt, ...toRow(item) });
   if (error) throw new Error(error.message);
-  return next;
+  return remember(next);
 }
 
 const MAX_COVER_BYTES = 3 * 1024 * 1024;

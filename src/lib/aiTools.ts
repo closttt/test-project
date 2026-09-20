@@ -12,6 +12,7 @@ import {
   type NotionTarget,
 } from "@/lib/notion";
 import { getThread, gmailWebUrl, htmlToText, isGmailConnected, listThreads, displayName, type MailBox } from "@/lib/gmail";
+import { LIBRARY_TOOLS, LIBRARY_TOOL_NAMES, runLibraryTool } from "@/lib/aiLibrary";
 import type { Task, Project, Priority } from "@/types";
 
 /**
@@ -214,9 +215,18 @@ export const MAIL_TOOLS: ToolDef[] = [
   },
 ];
 
-/** The tool list for this request: local tools always, integration tools only when connected. */
+/**
+ * The tool list for this request: local tools and the library always (the library works offline
+ * in localStorage too), integration tools only when connected — the model should never see a tool
+ * it cannot use.
+ */
 export function getAiTools(): ToolDef[] {
-  return [...AI_TOOLS, ...(isNotionConnected() ? NOTION_TOOLS : []), ...(isGmailConnected() ? MAIL_TOOLS : [])];
+  return [
+    ...AI_TOOLS,
+    ...LIBRARY_TOOLS,
+    ...(isNotionConnected() ? NOTION_TOOLS : []),
+    ...(isGmailConnected() ? MAIL_TOOLS : []),
+  ];
 }
 
 export interface ToolExecResult {
@@ -331,6 +341,7 @@ export function dispatchToolCall(ctx: AiToolContext, call: ParsedToolCall): Tool
 export async function runToolCall(ctx: AiToolContext, call: ParsedToolCall): Promise<ToolExecResult> {
   if (LOCAL_TOOL_NAMES.has(call.name)) return dispatchToolCall(ctx, call);
   try {
+    if (LIBRARY_TOOL_NAMES.has(call.name)) return await runLibraryTool(call.name, call.arguments);
     switch (call.name) {
       case "notion_create_page":
         return await notionCreatePageTool(call.arguments);

@@ -4,12 +4,13 @@ import { PRIORITY_META } from "@/types";
 import type { useData } from "@/store/DataProvider";
 import { cachedUnread, gmailAccountEmail, isGmailConnected } from "@/lib/gmail";
 import { isNotionConnected, loadNotionTarget } from "@/lib/notion";
+import { describeLibrary } from "@/lib/aiLibrary";
 
 type Ctx = ReturnType<typeof useData>;
 
 /** Compact text snapshot of the user's live data — sent as the system prompt for every AI request. */
 export function buildAiContext(ctx: Ctx): string {
-  const { tasks, projects, notes, meetings, completionLog, gamification, pomodoroSessions, settings } = ctx;
+  const { tasks, projects, notes, meetings, clients, students, completionLog, gamification, pomodoroSessions, settings } = ctx;
 
   const openTasks = tasks.filter((t) => !t.done);
   const upcomingMeetings = [...meetings]
@@ -43,6 +44,18 @@ export function buildAiContext(ctx: Ctx): string {
     const done = pt.filter((t) => t.done).length;
     return `- ${p.name}: ${done}/${pt.length} задач выполнено`;
   });
+
+  // Money-bearing entities are read-only for the assistant (no tool creates them), but it must
+  // still know they exist — «сколько у меня учеников» should not be answered with «не знаю».
+  const activeClients = clients.filter((c) => c.status !== "archived");
+  const clientLines = activeClients.slice(0, 12).map((c) => {
+    const owed = c.expectedPayment > 0 ? `, ожидается ${c.expectedPayment}` : "";
+    return `- ${c.name}${c.company ? ` (${c.company})` : ""}: ${c.status === "negotiation" ? "переговоры" : "активный"}, доход ${c.revenue}${owed}`;
+  });
+  const activeStudents = students.filter((s) => s.active);
+  const studentsLine = activeStudents.length
+    ? `Учеников активно: ${activeStudents.length}, суммарный месячный чек: ${activeStudents.reduce((sum, s) => sum + s.monthlyFee, 0)}.`
+    : "";
 
   const recentNotes = [...notes]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -114,5 +127,26 @@ export function buildAiContext(ctx: Ctx): string {
     projectLines.length ? `## Проекты\n${projectLines.join("\n")}` : "",
     integrationLines.length ? `## Интеграции\n${integrationLines.map((l) => `- ${l}`).join("\n")}` : "",
     recentNotes.length ? `## Последние заметки\n${recentNotes.join("\n")}` : "",
+    clientLines.length ? `## Клиенты\n${clientLines.join("\n")}` : "",
+    studentsLine,
+    `## База знаний — Библиотека\n${describeLibrary()}`,
+    LIBRARY_HOWTO,
   ].filter(Boolean).join("\n");
 }
+
+
+/**
+ * Standing instructions for the library tools. Kept out of `buildAiContext`'s data section so the
+ * rules read as rules: without them a model tends to answer «сохранил» without calling anything,
+ * or to add ten links one call at a time.
+ */
+const LIBRARY_HOWTO = [
+  "## Как работать с Библиотекой",
+  "- Пользователь прислал ссылку или несколько — добавляй их через `library_add` СРАЗУ, одним вызовом со списком `items` (или передай его текст в `text`). Не спрашивай подтверждения и не проси уточнений: всё легко отменить кнопкой «Вернуть».",
+  "- Название, описание, обложку и тип не выдумывай: оставь поля пустыми, система подтянет их со страницы сама.",
+  "- Теги бери из списка «Теги в ходу» выше; новый тег заводи, только если ни один не подходит.",
+  "- Заметки (`notes`) заполняй, только если пользователь сам что-то сказал про материал. Иначе не передавай поле — подставится шаблон под тип.",
+  "- Прежде чем отвечать на вопрос про библиотеку («что у меня есть по X», «что почитать»), вызови `library_search`.",
+  "- «Прочитал», «досмотрел», «начал» — это `library_update` со `status`: want/doing/done.",
+  "- После добавления коротко перечисли, что добавилось, и не повторяй ссылки целиком.",
+].join(String.fromCharCode(10));

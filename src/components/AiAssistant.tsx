@@ -11,6 +11,7 @@ import { easeOut } from "@/lib/motion";
 import { isAiConfigured, streamChat, requestCompletion, type ChatMessage } from "@/lib/ai";
 import { buildAiContext } from "@/lib/aiContext";
 import { getAiTools, runToolCall, type AiToolContext } from "@/lib/aiTools";
+import { ensureLibrary } from "@/lib/library";
 import { useToast } from "@/store/ToastProvider";
 import { isGmailConnected } from "@/lib/gmail";
 import { isNotionConnected } from "@/lib/notion";
@@ -83,6 +84,11 @@ export function AiAssistant() {
     const next: Turn[] = [...turns, { role: "user", text: question }, { role: "assistant", text: "" }];
     setTurns(next);
     setBusy(true);
+
+    // The library lives outside the store (Supabase/localStorage), so load it before the system
+    // prompt is built — otherwise the assistant answers «не знаю» about a base it can write to.
+    // Cached after the first call, and refreshed by every library mutation.
+    await ensureLibrary();
 
     const baseMessages: ChatMessage[] = [
       { role: "system", content: buildAiContext(ctx) },
