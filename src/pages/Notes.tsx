@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, Reorder } from "framer-motion";
-import { Pencil, Trash2, StickyNote, User, FolderKanban, Pin, Search, ListPlus, Archive } from "lucide-react";
+import { Pencil, Trash2, StickyNote, User, FolderKanban, Pin, Search, ListPlus, Archive, FileOutput } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import { pushRecent } from "@/lib/recent";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { tagColor } from "@/lib/tags";
+import { isNotionConnected, loadNotionTarget, notionCreatePage } from "@/lib/notion";
 import type { Note } from "@/types";
 
 const NONE = "none";
@@ -50,6 +51,24 @@ export default function Notes() {
   const { toast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
+
+  /** «→ в Notion»: the note becomes a page under the default target chosen in Settings (plan B2). */
+  async function sendToNotion(note: Note) {
+    if (!isNotionConnected()) {
+      toast("Notion не подключён", { actionLabel: "Настройки", onAction: () => navigate("/settings") });
+      return;
+    }
+    if (!loadNotionTarget()) {
+      toast("Выберите страницу Notion по умолчанию", { actionLabel: "Настройки", onAction: () => navigate("/settings") });
+      return;
+    }
+    try {
+      const page = await notionCreatePage({ title: note.title || "Заметка", markdown: note.body });
+      toast("Отправлено в Notion", { actionLabel: "Открыть", onAction: () => window.open(page.url, "_blank", "noopener") });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   function extractTasks(note: Note) {
     const lines = note.body.split("\n");
@@ -182,6 +201,9 @@ export default function Notes() {
                       <ListPlus className="h-4 w-4" />
                     </Button>
                   )}
+                  <Button variant="ghost" size="icon" title="→ в Notion" aria-label="Отправить заметку в Notion" onClick={(e) => { e.stopPropagation(); sendToNotion(note); }}>
+                    <FileOutput className="h-4 w-4" />
+                  </Button>
                   <Button variant="ghost" size="icon" title="Редактировать" aria-label="Редактировать заметку" onClick={(e) => { e.stopPropagation(); openEdit(note); }}>
                     <Pencil className="h-4 w-4" />
                   </Button>
