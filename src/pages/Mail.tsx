@@ -46,8 +46,14 @@ import {
 
 const POLL_MS = 2 * 60 * 1000;
 
-/** «Почта» (plan B1): Gmail inside the CRM — list, thread, mark/star/archive, → Задача, → Встреча. */
-export default function Mail() {
+/**
+ * Gmail inside the CRM — list, thread, mark/star/archive, → Задача, → Встреча.
+ *
+ * Lives as a pane of the «Сервисы» hub (`embedded`), where the hub already draws the title, the
+ * connection badge and the «Подключить» button; standalone (`/mail`) it wraps itself in AppShell
+ * so an old bookmark still opens something sensible.
+ */
+export default function Mail({ embedded = false }: { embedded?: boolean } = {}) {
   const { addTask, deleteTask, addMeeting, meetings, deleteMeeting } = useData();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -217,46 +223,45 @@ export default function Mail() {
   ];
 
   if (status === "loading") {
-    return (
-      <AppShell title="Почта">
-        <div className="flex h-40 items-center justify-center">
-          <span className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-foreground" />
-        </div>
-      </AppShell>
+    const spinner = (
+      <div className="flex h-40 items-center justify-center">
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-foreground" />
+      </div>
     );
+    return embedded ? spinner : <AppShell title="Почта">{spinner}</AppShell>;
   }
 
   if (!status.connected) {
-    return (
-      <AppShell title="Почта" description="Gmail внутри рабочего стола">
-        <EmptyState
-          icon={MailIcon}
-          title="Почта не подключена"
-          description={status.reason ?? "Подключите Gmail в настройках — письма, звёзды и архив появятся здесь, а из письма можно будет сделать задачу или встречу."}
-          actionLabel="Открыть настройки"
-          onAction={() => navigate("/settings")}
-        />
-      </AppShell>
+    const empty = (
+      <EmptyState
+        icon={MailIcon}
+        title="Почта не подключена"
+        description={status.reason ?? "Подключите Gmail — письма, звёзды и архив появятся здесь, а из письма можно будет сделать задачу или встречу."}
+        actionLabel="Открыть настройки"
+        onAction={() => navigate("/settings")}
+      />
     );
+    return embedded ? empty : <AppShell title="Почта" description="Gmail внутри рабочего стола">{empty}</AppShell>;
   }
 
-  return (
-    <AppShell
-      title="Почта"
-      description={status.email ?? undefined}
-      actions={
-        <>
-          <Button variant="outline" size="icon" onClick={() => load()} title="Обновить" aria-label="Обновить" disabled={loading}>
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-          </Button>
-          <Button variant="outline" size="sm" asChild>
-            <a href="https://mail.google.com" target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="h-4 w-4" /> Gmail
-            </a>
-          </Button>
-        </>
-      }
-    >
+  const toolbar = (
+    <>
+      <Button variant="outline" size="icon" onClick={() => load()} title="Обновить" aria-label="Обновить" disabled={loading}>
+        <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+      </Button>
+      <Button variant="outline" size="sm" asChild>
+        <a href="https://mail.google.com" target="_blank" rel="noopener noreferrer">
+          <ExternalLink className="h-4 w-4" /> Gmail
+        </a>
+      </Button>
+    </>
+  );
+
+  const body = (
+    <>
+      {/* Embedded in the hub there is no AppShell header to hang the toolbar on, so it rides above
+          the list instead of disappearing. */}
+      {embedded && <div className="mb-3 flex justify-end gap-2">{toolbar}</div>}
       <div className="grid gap-4 md:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
         {/* ── List ─────────────────────────────────────────────────────────── */}
         <section className={cn("flex min-w-0 flex-col gap-3", selectedId && "hidden md:flex")} aria-label="Список писем">
@@ -341,6 +346,13 @@ export default function Mail() {
           )}
         </section>
       </div>
+    </>
+  );
+
+  if (embedded) return body;
+  return (
+    <AppShell title="Почта" description={status.email ?? undefined} actions={toolbar}>
+      {body}
     </AppShell>
   );
 }

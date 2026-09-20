@@ -12,7 +12,7 @@ export const NAV_ITEMS: NavItemMeta[] = [
   { id: "tasks", label: "Задачи", to: "/tasks" },
   { id: "notes", label: "Заметки", to: "/notes" },
   { id: "calendar", label: "Календарь", to: "/calendar" },
-  { id: "mail", label: "Почта", to: "/mail" },
+  { id: "services", label: "Сервисы", to: "/services" },
   { id: "analytics", label: "Аналитика", to: "/analytics" },
   { id: "knowledge", label: "База знаний", to: "/knowledge" },
   { id: "archive", label: "Архив", to: "/archive" },

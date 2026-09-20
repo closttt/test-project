@@ -24,7 +24,7 @@ import {
   Flag,
   CalendarOff,
   FolderOpen,
-  Mail,
+  Plug,
 } from "lucide-react";
 
 import {
@@ -53,7 +53,7 @@ const NAV = [
   { to: "/tasks", label: "Задачи", icon: CheckSquare },
   { to: "/notes", label: "Заметки", icon: StickyNote },
   { to: "/calendar", label: "Календарь", icon: CalendarDays },
-  { to: "/mail", label: "Почта", icon: Mail },
+  { to: "/services", label: "Сервисы · почта, Notion", icon: Plug },
   { to: "/analytics", label: "Аналитика", icon: BarChart3 },
   { to: "/knowledge", label: "База знаний", icon: BookMarked },
   { to: "/archive", label: "Архив", icon: Archive },

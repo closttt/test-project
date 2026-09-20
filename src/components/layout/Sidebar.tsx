@@ -12,7 +12,7 @@ import {
   Archive,
   Settings,
   BookMarked,
-  Mail,
+  Plug,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -32,7 +32,7 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   tasks: CheckSquare,
   notes: StickyNote,
   calendar: CalendarDays,
-  mail: Mail,
+  services: Plug,
   analytics: BarChart3,
   knowledge: BookMarked,
   archive: Archive,
@@ -125,7 +125,7 @@ export function Sidebar() {
       label: n.label,
       icon: ICONS[n.id],
       end: n.id === "dashboard",
-      badge: n.id === "tasks" ? todayCount : n.id === "mail" ? unreadMail ?? undefined : undefined,
+      badge: n.id === "tasks" ? todayCount : n.id === "services" ? unreadMail ?? undefined : undefined,
     }));
 
   return (

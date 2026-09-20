@@ -10,7 +10,7 @@ import {
   BarChart3,
   BookMarked,
   Archive,
-  Mail,
+  Plug,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -24,7 +24,7 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   tasks: CheckSquare,
   notes: StickyNote,
   calendar: CalendarDays,
-  mail: Mail,
+  services: Plug,
   analytics: BarChart3,
   knowledge: BookMarked,
   archive: Archive,
