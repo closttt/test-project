@@ -110,6 +110,10 @@ body {
    so you swipe between columns) → a fixed 18rem on tablet/desktop. */
 .kanban-col { width: 82vw; max-width: 20rem; }
 @media (min-width: 640px) { .kanban-col { width: 18rem; max-width: none; } }
+/* Week board: eight columns instead of four, so they go narrower to fit more of the week on
+   screen at once — a planner you have to scroll to see Friday is not a planner. */
+@media (min-width: 640px) { .kanban-col--week { width: 13.5rem; } }
+@media (min-width: 1280px) { .kanban-col--week { width: 15rem; } }
 
 /* Own type scale — tighter tracking + calmer line-height on headings/large text. */
 h1, h2, h3, .text-2xl, .text-xl, .text-lg {

@@ -3,6 +3,7 @@ import { useLocation, useNavigate, Link } from "react-router-dom";
 import { Reorder, AnimatePresence, motion } from "framer-motion";
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Trash2,
   GripVertical,
@@ -10,6 +11,7 @@ import {
   Search,
   Repeat,
   CalendarClock,
+  CalendarDays,
   X,
   Moon,
   Bell,
@@ -25,7 +27,6 @@ import {
   Tag,
   AlignLeft,
   Timer,
-  Settings2,
   FolderKanban,
   ArrowLeftRight,
   ChevronsRightLeft,
@@ -64,7 +65,7 @@ import { useUI } from "@/store/UIProvider";
 import { useToast } from "@/store/ToastProvider";
 import { dueLabel, isOverdue, isToday, isUpcoming, todayStr, formatDate, addDays } from "@/lib/format";
 import { tagColor, FIXED_TAGS } from "@/lib/tags";
-import { loadKanbanColumns, saveKanbanColumns, newKanbanColumn, COLUMN_COLORS, COLUMN_COLOR_ORDER, type KanbanColumn, type ColumnColor } from "@/lib/kanban";
+import { weekDays, weekRangeLabel, weekColumnOf, BACKLOG_KEY } from "@/lib/weekBoard";
 import { placeInColumn } from "@/lib/taskOrder";
 import { KanbanBoard, type BoardColumn } from "@/components/kanban/KanbanBoard";
 import { DragRowsContext, DragRow } from "@/components/dnd/DragRows";
@@ -131,6 +132,15 @@ function offsetDate(days: number): string {
 }
 
 const KANBAN_COLLAPSED_KEY = "crm-kanban-collapsed-v1";
+const KANBAN_MODE_KEY = "crm-kanban-mode-v1";
+const VIEW_KEY = "crm-tasks-view-v1";
+
+type KanbanMode = "priority" | "week";
+
+/** Remembered grouping — reopening the board in the mode you left it in is the whole point. */
+function loadKanbanMode(): KanbanMode {
+  return localStorage.getItem(KANBAN_MODE_KEY) === "week" ? "week" : "priority";
+}
 function loadCollapsedCols(): Set<string> {
   try {
     return new Set(JSON.parse(localStorage.getItem(KANBAN_COLLAPSED_KEY) ?? "[]") as string[]);
@@ -215,19 +225,19 @@ export default function Tasks() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; task: Task } | null>(null);
-  const [view, setView] = useState<"list" | "kanban">("list");
-  const [kanbanMode, setKanbanMode] = useState<"priority" | "project" | "status" | "board">("priority");
+  // Persisted: reopening «Задачи» on the surface you left it on is the point of having a board.
+  const [view, setView] = useState<"list" | "kanban">(() => (localStorage.getItem(VIEW_KEY) === "kanban" ? "kanban" : "list"));
+  const [kanbanMode, setKanbanMode] = useState<KanbanMode>(() => loadKanbanMode());
+  // Which week the «По неделям» board shows: 0 = this one, ±1 = neighbours.
+  const [weekOffset, setWeekOffset] = useState(0);
   // Date-ascending by default (earliest due date on top) — manual drag-order stays one click away.
   const [sortBy, setSortBy] = useState<"manual" | "date" | "priority">("date");
-  const [columns, setColumns] = useState<KanbanColumn[]>(() => loadKanbanColumns());
-  const [renamingColId, setRenamingColId] = useState<string | null>(null);
-  const [colRenameDraft, setColRenameDraft] = useState("");
   const [savingView, setSavingView] = useState(false);
-  const [addingColumn, setAddingColumn] = useState(false);
   // Kanban: per-column quick-add drafts + collapsed columns (persisted UI pref).
   const [colAdd, setColAdd] = useState<Record<string, string>>({});
   const [collapsedCols, setCollapsedCols] = useState<Set<string>>(() => loadCollapsedCols());
-  useEffect(() => saveKanbanColumns(columns), [columns]);
+  useEffect(() => { localStorage.setItem(KANBAN_MODE_KEY, kanbanMode); }, [kanbanMode]);
+  useEffect(() => { localStorage.setItem(VIEW_KEY, view); }, [view]);
   useEffect(() => { localStorage.setItem(KANBAN_COLLAPSED_KEY, JSON.stringify([...collapsedCols])); }, [collapsedCols]);
 
   function toggleColCollapsed(key: string) {
@@ -261,6 +271,8 @@ export default function Tasks() {
   const [cursorKey, setCursorKey] = useState<string | null>(null);
 
   const byOrder = useMemo(() => [...tasks].sort((a, b) => a.order - b.order), [tasks]);
+  // Recomputed when the offset or the week-start preference changes; `weekDays` is pure.
+  const days = useMemo(() => weekDays(weekOffset, settings.weekStartsMonday), [weekOffset, settings.weekStartsMonday]);
   const [items, setItems] = useState<Task[]>(byOrder);
   const signature = byOrder.map((t) => t.id).join("|");
   useEffect(() => {
@@ -890,8 +902,7 @@ export default function Tasks() {
                 {cols.filter((c) => c.key !== col.key).map((c) => (
                   <DropdownMenuItem key={c.key} onClick={() => c.onDrop(task.id)}>
                     {c.dot && <span className="mr-1.5 h-2 w-2 rounded-full" style={{ background: c.dot }} />}
-                    {c.colorClass && <span className={cn("mr-1.5 h-2 w-2 rounded-full", c.colorClass)} />}
-                    {c.label}
+                    {c.label}{c.sub ? ` · ${c.sub}` : ""}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -944,87 +955,37 @@ export default function Tasks() {
 
   type KanbanCol = {
     key: string; label: string; dot?: string; match: (t: Task) => boolean;
-    onDrop: (id: string) => void; editable?: boolean;
-    /** Custom-board only: DS colour token + WIP cap. */
-    colorClass?: string; wipLimit?: number;
-    /** Suppress the per-column quick-add (e.g. the «Готово» column — adding a done task makes no sense). */
-    noAdd?: boolean;
+    onDrop: (id: string) => void;
+    /** Second line in the header — the date under a weekday name. */
+    sub?: string;
+    /** Today's column in the week view, so the current day is findable at a glance. */
+    highlight?: boolean;
   };
 
-  function addColumn(title: string) {
-    setColumns((cols) => [...cols, newKanbanColumn(title)]);
-  }
-
-  function renameColumn(id: string, title: string) {
-    if (!title.trim()) return;
-    setColumns((cols) => cols.map((c) => (c.id === id ? { ...c, title: title.trim() } : c)));
-  }
-
-  function setColumnColor(id: string, color: ColumnColor) {
-    setColumns((cols) => cols.map((c) => (c.id === id ? { ...c, color } : c)));
-  }
-
-  function setColumnWip(id: string, wipLimit: number | undefined) {
-    setColumns((cols) => cols.map((c) => (c.id === id ? { ...c, wipLimit } : c)));
-  }
-
-  function deleteColumn(id: string) {
-    if (columns.length <= 1) return;
-    const removed = columns.find((c) => c.id === id);
-    const fallback = columns.find((c) => c.id !== id)!.id;
-    const movedTasks = tasks.filter((t) => t.kanbanColumnId === id);
-    const prevColumns = columns;
-    movedTasks.forEach((t) => updateTask(t.id, { kanbanColumnId: fallback }));
-    setColumns((cols) => cols.filter((c) => c.id !== id));
-    const run = pushUndo(`Колонка удалена: ${removed?.title ?? ""}`, () => {
-      setColumns(prevColumns);
-      movedTasks.forEach((t) => updateTask(t.id, { kanbanColumnId: id }));
-    });
-    toast(`Колонка удалена: ${removed?.title ?? ""}`, { actionLabel: "Вернуть", onAction: run });
-  }
-
-  function moveColumn(fromId: string, toId: string) {
-    if (fromId === toId) return;
-    setColumns((cols) => {
-      const from = cols.findIndex((c) => c.id === fromId);
-      const to = cols.findIndex((c) => c.id === toId);
-      if (from === -1 || to === -1) return cols;
-      const next = [...cols];
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      return next;
-    });
-  }
-
+  /**
+   * Two groupings, both about "what do I do next": by priority, or across the days of a week.
+   * Project/status/custom boards were removed on request — the week board replaced them as the
+   * planning surface, and every one of those groupings was reachable from the list view anyway.
+   */
   function kanbanColumns(): KanbanCol[] {
-    if (kanbanMode === "board") {
-      return columns.map((col) => ({
-        key: col.id,
-        label: col.title,
-        editable: true,
-        colorClass: col.color && col.color !== "none" ? COLUMN_COLORS[col.color].dot : undefined,
-        wipLimit: col.wipLimit,
-        match: (t) => !t.done && (t.kanbanColumnId ?? columns[0]?.id) === col.id,
-        onDrop: (id) => updateTask(id, { kanbanColumnId: col.id }),
+    if (kanbanMode === "week") {
+      const cols: KanbanCol[] = days.map((d) => ({
+        key: d.date,
+        label: d.label,
+        sub: d.short,
+        highlight: d.isToday,
+        match: (t) => !t.done && weekColumnOf(t, days) === d.date,
+        // Dropping onto a day schedules the task for it — that IS the planning gesture here.
+        onDrop: (id) => updateTask(id, { dueDate: d.date, done: false }),
       }));
-    }
-    if (kanbanMode === "project") {
-      const cols: KanbanCol[] = projects.map((pr) => ({
-        key: pr.id,
-        label: pr.name,
-        match: (t) => !t.done && t.projectId === pr.id,
-        onDrop: (id) => updateTask(id, { projectId: pr.id }),
-      }));
-      cols.push({ key: "none", label: "Без проекта", match: (t) => !t.done && !t.projectId, onDrop: (id) => updateTask(id, { projectId: undefined }) });
+      cols.push({
+        key: BACKLOG_KEY,
+        label: "Бэклог",
+        sub: "без срока",
+        match: (t) => !t.done && !t.dueDate,
+        onDrop: (id) => updateTask(id, { dueDate: undefined, done: false }),
+      });
       return cols;
-    }
-    if (kanbanMode === "status") {
-      return [
-        { key: "nodate", label: "Без срока", match: (t) => !t.done && !t.dueDate, onDrop: (id) => updateTask(id, { dueDate: undefined, done: false }) },
-        { key: "today", label: "Сегодня", match: (t) => !t.done && !!t.dueDate && (isToday(t.dueDate) || isOverdue(t.dueDate)), onDrop: (id) => updateTask(id, { dueDate: todayStr(), done: false }) },
-        { key: "soon", label: "Скоро", match: (t) => !t.done && isUpcoming(t.dueDate), onDrop: (id) => updateTask(id, { dueDate: offsetDate(7), done: false }) },
-        { key: "done", label: "Готово", dot: "hsl(var(--success))", noAdd: true, match: (t) => t.done, onDrop: (id) => { const t = tasks.find((x) => x.id === id); if (t && !t.done) handleToggleTask(t); } },
-      ];
     }
     return ([1, 2, 3, 0] as Task["priority"][]).map((p) => ({
       key: `p${p}`,
@@ -1045,8 +1006,7 @@ export default function Tasks() {
     // Manual order within a column — dnd-kit reorders live while dragging, this is the resting truth.
     const itemsByColumn: Record<string, Task[]> = {};
     cols.forEach((col) => { itemsByColumn[col.key] = base.filter(col.match).sort((a, b) => a.order - b.order); });
-    const boardCols: BoardColumn[] = cols.map((c) => ({ key: c.key, editable: c.editable, collapsed: collapsedCols.has(c.key) }));
-    const isOverWip = (col: KanbanCol) => !!col.wipLimit && (itemsByColumn[col.key]?.length ?? 0) > col.wipLimit;
+    const boardCols: BoardColumn[] = cols.map((c) => ({ key: c.key, collapsed: collapsedCols.has(c.key) }));
 
     /** A card landed in `toKey` with `beforeId` directly under it (null = bottom). Apply the column's
      * property if it changed columns, then slot it into the global manual order at that spot. */
@@ -1060,7 +1020,7 @@ export default function Tasks() {
 
     return (
       <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Segmented
             ariaLabel="Группировка канбана"
             className="self-start"
@@ -1068,24 +1028,32 @@ export default function Tasks() {
             onChange={setKanbanMode}
             options={[
               { value: "priority", label: "Приоритет" },
-              { value: "project", label: "Проект" },
-              { value: "status", label: "Статус" },
-              { value: "board", label: "Доска" },
+              { value: "week", label: <><CalendarDays className="h-3.5 w-3.5" /> По неделям</> },
             ]}
           />
-          {kanbanMode === "board" && (
-            <Button variant="outline" size="sm" className="h-7 gap-1" onClick={() => setAddingColumn(true)}>
-              <Plus className="h-3.5 w-3.5" /> Колонка
-            </Button>
+          {kanbanMode === "week" && (
+            <div className="flex items-center gap-1">
+              <IconAction icon={ChevronLeft} label="Предыдущая неделя" onClick={() => setWeekOffset((n) => n - 1)} className="p-1" iconClassName="h-4 w-4" />
+              <span className="min-w-28 text-center text-sm tabular-nums text-muted-foreground">{weekRangeLabel(days)}</span>
+              <IconAction icon={ChevronRight} label="Следующая неделя" onClick={() => setWeekOffset((n) => n + 1)} className="p-1" iconClassName="h-4 w-4" />
+              {weekOffset !== 0 && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setWeekOffset(0)}>
+                  Эта неделя
+                </Button>
+              )}
+            </div>
           )}
         </div>
         <KanbanBoard<Task>
           columns={boardCols}
           itemsByColumn={itemsByColumn}
           onMoveItem={moveTo}
-          onMoveColumn={moveColumn}
+          // No draggable columns in either grouping: days and priorities have a fixed order.
+          onMoveColumn={() => {}}
           labelOf={(id) => byKey.get(id)?.label ?? tasks.find((t) => t.id === id)?.title ?? id}
-          columnClassName={(bc) => (isOverWip(byKey.get(bc.key)!) ? "border-risk/40 bg-risk/5" : "border-border")}
+          columnClassName={(bc) =>
+            cn(kanbanMode === "week" && "kanban-col--week", byKey.get(bc.key)?.highlight ? "border-brand/50 bg-brand/5" : "border-border")
+          }
           renderCard={(t, bc) => kanbanCard(t, byKey.get(bc.key)!)}
           renderEmpty={() => (
             <p className="rounded-lg border border-dashed border-border px-1 py-6 text-center text-xs text-muted-foreground">
@@ -1095,12 +1063,11 @@ export default function Tasks() {
           renderCollapsed={(bc, colTasks, isOver) => {
             // Collapsed: a narrow strip with a vertical label + count; drop still moves a card here.
             const col = byKey.get(bc.key)!;
-            const overWip = isOverWip(col);
             return (
               <div
                 className={cn(
                   "flex w-11 shrink-0 snap-start flex-col items-center gap-2 rounded-xl border p-2 transition-colors",
-                  overWip ? "border-risk/40 bg-risk/5" : "border-border bg-secondary/20",
+                  col.highlight ? "border-brand/50 bg-brand/5" : "border-border bg-secondary/20",
                   isOver && "bg-brand/5 ring-1 ring-inset ring-brand/40"
                 )}
               >
@@ -1112,7 +1079,7 @@ export default function Tasks() {
                 >
                   <ChevronsLeftRight className="h-4 w-4" />
                 </button>
-                <span className={cn("text-xs tabular-nums", overWip ? "font-semibold text-risk" : "text-muted-foreground")}>{colTasks.length}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{colTasks.length}</span>
                 <span
                   className="min-h-0 flex-1 truncate text-xs font-medium text-muted-foreground"
                   style={{ writingMode: "vertical-rl" }}
@@ -1123,44 +1090,16 @@ export default function Tasks() {
               </div>
             );
           }}
-          renderHeader={(bc, colTasks, handle) => {
+          renderHeader={(bc, colTasks) => {
             const col = byKey.get(bc.key)!;
-            const overWip = isOverWip(col);
             return (
-              <div className="group flex items-center justify-between px-1 py-0.5 text-sm font-medium">
-                {renamingColId === col.key ? (
-                  <input
-                    autoFocus
-                    value={colRenameDraft}
-                    onChange={(e) => setColRenameDraft(e.target.value)}
-                    onBlur={() => { renameColumn(col.key, colRenameDraft); setRenamingColId(null); }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") { renameColumn(col.key, colRenameDraft); setRenamingColId(null); }
-                      if (e.key === "Escape") setRenamingColId(null);
-                    }}
-                    className="min-w-0 flex-1 rounded border border-brand bg-transparent px-1 py-0.5 text-sm outline-none"
-                  />
-                ) : (
-                  <span
-                    {...(col.editable ? handle : {})}
-                    className={cn("flex min-w-0 flex-1 items-center gap-2 rounded outline-none", col.editable && "cursor-grab touch-manipulation active:cursor-grabbing")}
-                    onDoubleClick={() => { if (col.editable) { setRenamingColId(col.key); setColRenameDraft(col.label); } }}
-                    title={col.editable ? "Тяните — переставить, двойной клик — переименовать" : undefined}
-                  >
-                    {col.dot && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: col.dot }} />}
-                    {col.colorClass && <span className={cn("h-2 w-2 shrink-0 rounded-full", col.colorClass)} />}
-                    <span className="truncate">{col.label}</span>
-                  </span>
-                )}
-                <span
-                  className={cn(
-                    "shrink-0 text-xs tabular-nums",
-                    overWip ? "font-semibold text-risk" : "text-muted-foreground"
-                  )}
-                  title={col.wipLimit ? `Лимит WIP: ${col.wipLimit}` : undefined}
-                >
-                  {colTasks.length}{col.wipLimit ? `/${col.wipLimit}` : ""}
+              <div className="group flex items-center justify-between gap-1 px-1 py-0.5 text-sm font-medium">
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  {col.dot && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: col.dot }} />}
+                  <span className={cn("truncate", col.highlight && "text-brand")}>{col.label}</span>
+                  {col.sub && <span className="shrink-0 text-xs font-normal text-muted-foreground">{col.sub}</span>}
                 </span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{colTasks.length}</span>
                 <button
                   onClick={() => toggleColCollapsed(col.key)}
                   aria-label={`Свернуть колонку: ${col.label}`}
@@ -1169,72 +1108,13 @@ export default function Tasks() {
                 >
                   <ChevronsRightLeft className="h-3.5 w-3.5" />
                 </button>
-                {col.editable && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        aria-label={`Настроить колонку: ${col.label}`}
-                        title="Цвет и лимит WIP"
-                        className="shrink-0 rounded p-0.5 text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                      >
-                        <Settings2 className="h-3.5 w-3.5" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <p className="px-2 py-1 text-xs text-muted-foreground">Цвет</p>
-                      <div className="flex flex-wrap gap-1.5 px-2 pb-2">
-                        {COLUMN_COLOR_ORDER.map((c) => (
-                          <button
-                            key={c}
-                            type="button"
-                            aria-label={COLUMN_COLORS[c].label}
-                            title={COLUMN_COLORS[c].label}
-                            onClick={() => setColumnColor(col.key, c)}
-                            className={cn(
-                              "h-5 w-5 rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                              COLUMN_COLORS[c].dot,
-                              columns.find((x) => x.id === col.key)?.color === c && "ring-2 ring-foreground ring-offset-1 ring-offset-background"
-                            )}
-                          />
-                        ))}
-                      </div>
-                      <DropdownMenuSeparator />
-                      <div className="px-2 py-1.5">
-                        <p className="mb-1 text-xs text-muted-foreground">Лимит WIP (0 — без лимита)</p>
-                        <Input
-                          type="number"
-                          min={0}
-                          className="h-8 text-xs"
-                          value={col.wipLimit ?? 0}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            const n = Number(e.target.value) || 0;
-                            setColumnWip(col.key, n > 0 ? n : undefined);
-                          }}
-                        />
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                {col.editable && columns.length > 1 && (
-                  <IconAction
-                    icon={X}
-                    label={`Удалить колонку: ${col.label}`}
-                    tone="danger"
-                    onClick={() => deleteColumn(col.key)}
-                    reveal
-                    className="ml-1 p-0.5"
-                  />
-                )}
               </div>
             );
           }}
           renderFooter={(bc) => {
             const col = byKey.get(bc.key)!;
             // Per-column quick-add — create a card straight into this column (with the column's
-            // property applied), no dragging. Hidden on «Готово».
-            if (col.noAdd) return null;
+            // property applied), no dragging.
             return (
               <div className="flex items-center gap-1.5 rounded-md px-1.5 py-1">
                 <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
@@ -1565,13 +1445,6 @@ export default function Tasks() {
         title="Название вида"
         placeholder="Напр.: Клиентские на неделю"
         onSubmit={saveCurrentView}
-      />
-      <PromptDialog
-        open={addingColumn}
-        onOpenChange={setAddingColumn}
-        title="Название колонки"
-        placeholder="Напр.: На проверке"
-        onSubmit={addColumn}
       />
 
       {/* Right-click context menu */}
