@@ -66,7 +66,7 @@ import { useToast } from "@/store/ToastProvider";
 import { dueLabel, isOverdue, isToday, isUpcoming, todayStr, formatDate, addDays } from "@/lib/format";
 import { tagColor, FIXED_TAGS } from "@/lib/tags";
 import { weekDays, weekRangeLabel, weekColumnOf, BACKLOG_KEY } from "@/lib/weekBoard";
-import { placeInColumn } from "@/lib/taskOrder";
+import { placeInColumn, sortByPriority } from "@/lib/taskOrder";
 import { KanbanBoard, type BoardColumn } from "@/components/kanban/KanbanBoard";
 import { DragRowsContext, DragRow } from "@/components/dnd/DragRows";
 import { pushUndo } from "@/lib/undoStack";
@@ -1003,9 +1003,11 @@ export default function Tasks() {
     );
     const cols = kanbanColumns();
     const byKey = new Map(cols.map((c) => [c.key, c] as const));
-    // Manual order within a column — dnd-kit reorders live while dragging, this is the resting truth.
+    // Priority first — Высокий always on top, then Средний, Низкий, and «без приоритета» last —
+    // and the manual drag order only within one priority level. dnd-kit reorders live while
+    // dragging; this is the resting truth.
     const itemsByColumn: Record<string, Task[]> = {};
-    cols.forEach((col) => { itemsByColumn[col.key] = base.filter(col.match).sort((a, b) => a.order - b.order); });
+    cols.forEach((col) => { itemsByColumn[col.key] = sortByPriority(base.filter(col.match)); });
     const boardCols: BoardColumn[] = cols.map((c) => ({ key: c.key, collapsed: collapsedCols.has(c.key) }));
 
     /** A card landed in `toKey` with `beforeId` directly under it (null = bottom). Apply the column's

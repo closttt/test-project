@@ -40,7 +40,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   let html = "";
   try {
-    const upstream = await fetchPage(target, BOT_UA);
+    // Some sites (dsgners.ru) reset the connection or answer 403 to a bot User-Agent — the same
+    // page with a browser UA is the fallback, not a failure.
+    let upstream: Response;
+    try {
+      upstream = await fetchPage(target, BOT_UA);
+      if (!upstream.ok) upstream = await fetchPage(target, BROWSER_UA);
+    } catch {
+      upstream = await fetchPage(target, BROWSER_UA);
+    }
     const type = upstream.headers.get("content-type") ?? "";
     if (!type.includes("html")) {
       res.setHeader("Cache-Control", "public, max-age=3600");

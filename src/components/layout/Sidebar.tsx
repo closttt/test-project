@@ -8,11 +8,11 @@ import {
   CheckSquare,
   StickyNote,
   CalendarDays,
+  CalendarClock,
   BarChart3,
   Archive,
   Settings,
   BookMarked,
-  Plug,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -23,16 +23,15 @@ import { computeStreak } from "@/lib/gameStats";
 import { StreakFlame } from "@/components/StreakFlame";
 import { levelTitle } from "@/types";
 import { NAV_ITEMS, loadNavOrder, loadNavHidden } from "@/lib/navConfig";
-import { useGmailUnread } from "@/lib/gmail";
 
 const ICONS: Record<string, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
   clients: Users,
   projects: FolderKanban,
   tasks: CheckSquare,
+  planner: CalendarClock,
   notes: StickyNote,
   calendar: CalendarDays,
-  services: Plug,
   analytics: BarChart3,
   knowledge: BookMarked,
   archive: Archive,
@@ -100,7 +99,6 @@ export function Sidebar() {
   const [order, setOrder] = useState(() => loadNavOrder());
   const [hidden, setHidden] = useState(() => loadNavHidden());
   // Unread mail badge — null until Gmail is connected, so the item stays plain otherwise.
-  const unreadMail = useGmailUnread();
 
   useEffect(() => {
     const onChange = () => {
@@ -125,7 +123,7 @@ export function Sidebar() {
       label: n.label,
       icon: ICONS[n.id],
       end: n.id === "dashboard",
-      badge: n.id === "tasks" ? todayCount : n.id === "services" ? unreadMail ?? undefined : undefined,
+      badge: n.id === "tasks" ? todayCount : undefined,
     }));
 
   return (

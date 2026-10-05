@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import { Heart, LayoutGrid, List, Plus, Search, Star, ExternalLink, Library as LibraryIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Heart, LayoutGrid, List, Link2, Loader2, Search, Star, ExternalLink, Library as LibraryIcon } from "lucide-react";
 import { motion } from "framer-motion";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
 import { FilterChip } from "@/components/ui/filter-chip";
+import { AnimatedCheckbox } from "@/components/ui/animated-checkbox";
 import { TaskTag } from "@/components/TaskTag";
 import { EmptyState } from "@/components/EmptyState";
 import { StaggerList, StaggerItem } from "@/components/motion/Stagger";
 import { ShimmerSkeleton } from "@/components/unlumen-ui/shimmer-skeleton";
 import { tagColor } from "@/lib/tags";
+import { faviconUrl } from "@/lib/links";
+import { useToast } from "@/store/ToastProvider";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import {
@@ -22,7 +24,9 @@ import {
   matchesLibraryQuery,
   sortLibrary,
   libraryTagCounts,
-  newDraft,
+  linkDrafts,
+  unfurl,
+  unfurlPatch,
   type LibraryItem,
   type LibraryDraft,
   type LibraryType,
@@ -34,6 +38,21 @@ import { LibraryItemDialog } from "@/components/library/LibraryItemDialog";
 import type { LibraryState } from "@/components/library/useLibrary";
 
 const VIEW_KEY = "crm-library-view-v1";
+const HAS_LINK = /https?:\/\//i;
+/** url → when its preview was last looked for. A site with no og:image is retried after a few days, not on every visit. */
+const PREVIEW_TRIED_KEY = "crm-library-preview-tried-v1";
+const PREVIEW_RETRY_MS = 3 * 24 * 60 * 60 * 1000;
+/** How many sites are unfurled at once while backfilling — enough to feel live, gentle on the function. */
+const PREVIEW_PARALLEL = 3;
+
+function loadTried(): Record<string, number> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PREVIEW_TRIED_KEY) ?? "{}");
+    return raw && typeof raw === "object" ? (raw as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
 
 interface Props {
   lib: LibraryState;
@@ -45,8 +64,10 @@ interface Props {
 }
 
 /**
- * The «Библиотека» tab: counter, search, type/status/tag filters, grid or list of items, and the
- * add/edit dialog. All filtering is client-side over the loaded list — a personal library is a
+ * The «Библиотека» tab: one link field to add, counter, search, type/status/tag filters, grid or
+ * list of items, and the item's card. Adding is deliberately one gesture — paste a link and the
+ * card appears at once, its real title and preview filling in a moment later; the «просмотрено»
+ * tick lives on the card itself. All filtering is client-side over the loaded list — a personal library is a
  * few thousand items at most, and the whole point is that finding something takes one keystroke.
  */
 export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
@@ -59,9 +80,43 @@ export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
   const [onlyFav, setOnlyFav] = useState(false);
   const [tag, setTag] = useState<string | null>(null);
   const [opened, setOpened] = useState<LibraryItem | null>(null);
-  const [draft, setDraft] = useState<LibraryDraft | null>(null);
+  const [addValue, setAddValue] = useState("");
+  /** Items whose title/preview is still being fetched — their card shows a shimmer cover. */
+  const [pending, setPending] = useState<Set<string>>(() => new Set());
+  const addRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   useEffect(() => { localStorage.setItem(VIEW_KEY, view); }, [view]);
+
+  // Telegram-style previews for what is already saved: every item with a link but no picture is
+  // unfurled in the background, a few at a time, its card shimmering until the preview lands.
+  const inflight = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (loading) return;
+    const tried = loadTried();
+    const now = Date.now();
+    const queue = items.filter(
+      (i) => i.url && !i.coverUrl && !inflight.current.has(i.id) && !(now - (tried[i.url] ?? 0) < PREVIEW_RETRY_MS)
+    );
+    if (queue.length === 0) return;
+    queue.forEach((i) => inflight.current.add(i.id));
+    setPending((cur) => new Set([...cur, ...queue.map((i) => i.id)]));
+    let next = 0;
+    const worker = async () => {
+      for (let i = queue[next++]; i; i = queue[next++]) {
+        const meta = await unfurl(i.url!);
+        const patch = unfurlPatch(meta, i);
+        if (Object.keys(patch).length > 0) await lib.update(i.id, patch);
+        const log = loadTried();
+        log[i.url!] = Date.now();
+        try { localStorage.setItem(PREVIEW_TRIED_KEY, JSON.stringify(log)); } catch { /* quota — just retry next time */ }
+        inflight.current.delete(i.id);
+        setPending((cur) => { const out = new Set(cur); out.delete(i.id); return out; });
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(PREVIEW_PARALLEL, queue.length) }, worker));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, items.length]);
 
   // Deep links: open an item / start a draft once the list is here, then tell the parent it's used.
   useEffect(() => {
@@ -73,7 +128,11 @@ export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openId, loading]);
   useEffect(() => {
-    if (pendingDraft) { setDraft(pendingDraft); onConsumed?.(); }
+    if (!pendingDraft) return;
+    // Shared from the phone: a link goes through the same one-step add; bare text becomes an item.
+    if (pendingDraft.url) void quickAdd(pendingDraft.url);
+    else if (pendingDraft.title.trim()) void lib.add(pendingDraft);
+    onConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingDraft]);
 
@@ -106,8 +165,61 @@ export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
 
   const hasFilters = !!(type || status || onlyFav || tag || query.trim());
 
-  function startAdd() {
-    setDraft(newDraft());
+  /**
+   * Paste → card. Each link is saved immediately under its domain, then /api/unfurl brings the
+   * page's title, preview image and blurb, patched in when it answers. A failed unfurl just leaves
+   * the domain as the title — adding never waits on, or fails because of, someone else's site.
+   */
+  async function quickAdd(raw: string) {
+    const drafts = linkDrafts(raw, lib.items);
+    if (drafts.length === 0) {
+      toast(HAS_LINK.test(raw) ? "Эта ссылка уже в библиотеке" : "Вставьте ссылку — https://…");
+      return;
+    }
+    setAddValue("");
+    const mark = (id: string, on: boolean) =>
+      setPending((cur) => {
+        const next = new Set(cur);
+        if (on) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    for (const d of drafts) {
+      const item = await lib.add(d);
+      if (!item || !d.url) continue;
+      mark(item.id, true);
+      unfurl(d.url)
+        .then((meta) => {
+          const patch = unfurlPatch(meta, item);
+          if (Object.keys(patch).length > 0) return lib.update(item.id, patch);
+        })
+        .finally(() => mark(item.id, false));
+    }
+    if (drafts.length > 1) toast(`Добавлено: ${drafts.length}`);
+  }
+
+  /** The tick on the card: done ↔ not yet. «В процессе» is still there in the item's card. */
+  function toggleSeen(i: LibraryItem) {
+    lib.update(i.id, { status: i.status === "done" ? "want" : "done" });
+  }
+
+  function seenBox(i: LibraryItem) {
+    return (
+      <span onClick={(e) => e.stopPropagation()} className="shrink-0" title={i.status === "done" ? LIBRARY_TYPES[i.type].done : "Не просмотрено"}>
+        <AnimatedCheckbox size="sm" checked={i.status === "done"} onChange={() => toggleSeen(i)} label={`${LIBRARY_TYPES[i.type].done}: ${i.title}`} />
+      </span>
+    );
+  }
+
+  /** Notion-style mention: the site's own icon + its domain (or author). */
+  function mention(i: LibraryItem) {
+    if (!i.domain && !i.author) return null;
+    return (
+      <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        {i.domain && <img src={faviconUrl(i.domain, 32)} alt="" width={14} height={14} loading="lazy" className="h-3.5 w-3.5 shrink-0 rounded-sm" />}
+        <span className="truncate">{i.author ?? i.domain}</span>
+      </p>
+    );
   }
 
   function card(i: LibraryItem) {
@@ -118,7 +230,21 @@ export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
         <motion.div whileHover={{ y: -3 }} transition={spring}>
           <Card className="group flex cursor-pointer flex-col overflow-hidden" onClick={() => setOpened(i)}>
             <div className={cn("relative flex aspect-[16/10] items-center justify-center overflow-hidden bg-gradient-to-br", style.plate)}>
-              {i.coverUrl ? <img src={i.coverUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : <Icon className="h-9 w-9 opacity-80" />}
+              {i.coverUrl ? (
+                <img src={i.coverUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+              ) : pending.has(i.id) ? (
+                <ShimmerSkeleton className="absolute inset-0 h-full w-full" rounded="none" />
+              ) : i.domain ? (
+                // No picture on the page: the mention look — the site's own icon, big, on its plate.
+                <span className="flex flex-col items-center gap-2">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm">
+                    <img src={faviconUrl(i.domain, 128)} alt="" width={36} height={36} loading="lazy" className="h-9 w-9 object-contain" />
+                  </span>
+                  <span className="text-xs font-medium text-foreground/80">{i.domain}</span>
+                </span>
+              ) : (
+                <Icon className="h-9 w-9 opacity-80" />
+              )}
               <span className={cn("absolute left-2 top-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.65rem] font-medium backdrop-blur", style.chip, "bg-background/70")}>
                 <Icon className="h-3 w-3" /> {LIBRARY_TYPES[i.type].label}
               </span>
@@ -136,12 +262,13 @@ export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
             </div>
             <CardContent className="flex flex-col gap-2 p-3">
               <div className="flex items-start gap-2">
-                <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", STATUS_DOT[i.status])} title={LIBRARY_STATUSES[i.status].label} />
-                <span className="line-clamp-2 text-sm font-medium leading-snug">{i.title}</span>
+                <span className="mt-0.5">{seenBox(i)}</span>
+                <span className={cn("line-clamp-2 text-sm font-medium leading-snug", i.status === "done" && "text-muted-foreground")}>
+                  {i.title}
+                  {pending.has(i.id) && <Loader2 className="ml-1.5 inline h-3 w-3 animate-spin text-muted-foreground" />}
+                </span>
               </div>
-              {(i.author || i.domain) && (
-                <p className="truncate text-xs text-muted-foreground">{i.author ?? i.domain}</p>
-              )}
+              {mention(i)}
               {i.description && <p className="line-clamp-2 text-xs text-muted-foreground/80">{i.description}</p>}
               {(i.tags.length > 0 || i.rating) && (
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -172,8 +299,8 @@ export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
         <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded bg-gradient-to-br", style.plate)}>
           {i.coverUrl ? <img src={i.coverUrl} alt="" className="h-full w-full object-cover" /> : <Icon className="h-4 w-4" />}
         </span>
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_DOT[i.status])} title={LIBRARY_STATUSES[i.status].label} />
-        <span className="min-w-0 flex-1 truncate text-sm">{i.title}</span>
+        {seenBox(i)}
+        <span className={cn("min-w-0 flex-1 truncate text-sm", i.status === "done" && "text-muted-foreground")}>{i.title}</span>
         <span className="hidden max-w-[12rem] truncate text-xs text-muted-foreground md:inline">{i.author ?? i.domain}</span>
         <span className={cn("hidden rounded-full px-2 py-0.5 text-[0.65rem] font-medium sm:inline", style.chip)}>{LIBRARY_TYPES[i.type].label}</span>
         <div className="hidden items-center gap-1.5 lg:flex">{i.tags.slice(0, 3).map((t) => <TaskTag key={t} tag={t} />)}</div>
@@ -197,6 +324,27 @@ export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* The whole add flow: paste a link. Title and preview are fetched on their own. */}
+      <div className="relative">
+        <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand" />
+        <Input
+          ref={addRef}
+          value={addValue}
+          onChange={(e) => setAddValue(e.target.value)}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData("text");
+            if (HAS_LINK.test(text)) {
+              e.preventDefault();
+              void quickAdd(`${addValue} ${text}`);
+            }
+          }}
+          onKeyDown={(e) => { if (e.key === "Enter" && addValue.trim()) void quickAdd(addValue); }}
+          placeholder="Вставьте ссылку — название и превью подтянутся сами"
+          aria-label="Добавить по ссылке"
+          className="h-11 pl-9 text-sm"
+        />
+      </div>
+
       {/* Counter strip — the «2437» from the reel: one number that grows as you read. */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-border bg-secondary/20 px-4 py-3">
         <span className="flex items-center gap-2">
@@ -215,12 +363,7 @@ export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
             <span className="tabular-nums font-medium">{statusCounts[s]}</span> {LIBRARY_STATUSES[s].label.toLowerCase()}
           </button>
         ))}
-        <span className="ml-auto flex items-center gap-2">
-          {!lib.cloud && <span className="text-xs text-muted-foreground" title={error ?? "Supabase не настроен"}>локально</span>}
-          <Button size="sm" className="gap-1.5" onClick={startAdd}>
-            <Plus className="h-4 w-4" /> Добавить
-          </Button>
-        </span>
+        {!lib.cloud && <span className="ml-auto text-xs text-muted-foreground" title={error ?? "Supabase не настроен"}>локально</span>}
       </div>
 
       {error && <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-400">{error}</p>}
@@ -289,8 +432,8 @@ export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
           icon={LibraryIcon}
           title="Библиотека пуста"
           description="Книги, статьи, видео, подкасты, курсы — всё, что прочитали или хотите. Вставьте ссылку, остальное подтянется."
-          actionLabel="Добавить первое"
-          onAction={startAdd}
+          actionLabel="Вставить ссылку"
+          onAction={() => addRef.current?.focus()}
         />
       ) : visible.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
@@ -308,13 +451,6 @@ export function LibraryPanel({ lib, openId, pendingDraft, onConsumed }: Props) {
         item={openedLive}
         onUpdate={lib.update}
         onDelete={lib.remove}
-        knownTags={tagCounts.map(([t]) => t)}
-      />
-      <LibraryItemDialog
-        open={!!draft}
-        onOpenChange={(v) => !v && setDraft(null)}
-        draft={draft}
-        onCreate={async (d) => { await lib.add(d); }}
         knownTags={tagCounts.map(([t]) => t)}
       />
     </div>

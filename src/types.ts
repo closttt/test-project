@@ -258,6 +258,35 @@ export interface Meeting {
   tags?: string[];
 }
 
+export type PlanColor = "blue" | "green" | "violet" | "orange" | "rose" | "slate";
+
+/**
+ * One block on the «Планер» week grid: a stretch of time on a day. It either points at a task
+ * (its title is the task's, live) or was dropped from a pinned routine, or both are absent and it
+ * carries just its own title.
+ */
+export interface PlanBlock {
+  id: string;
+  date: string; // YYYY-MM-DD
+  /** Minutes from midnight, a multiple of 30. */
+  startMin: number;
+  /** Length in minutes, a multiple of 30, at least 30. */
+  durationMin: number;
+  title: string;
+  color: PlanColor;
+  taskId?: string;
+  templateId?: string;
+  done?: boolean;
+}
+
+/** A pinned, repeating routine in the planner's side panel («Тренировка», «Английский»…). */
+export interface PlanTemplate {
+  id: string;
+  title: string;
+  durationMin: number;
+  color: PlanColor;
+}
+
 export interface SavedView {
   id: string;
   name: string;
@@ -364,6 +393,10 @@ export interface AppData {
   gamification: Gamification;
   /** Completed pomodoro/break intervals — powers focus analytics + focus XP. */
   pomodoroSessions: PomodoroSession[];
+  /** «Планер» time blocks. Optional so older saves and test fixtures stay valid; migrate() backfills. */
+  planBlocks?: PlanBlock[];
+  /** Pinned routines in the planner's side panel. Undefined = never set up → starter set. */
+  planTemplates?: PlanTemplate[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {

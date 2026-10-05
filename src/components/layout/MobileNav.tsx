@@ -7,10 +7,10 @@ import {
   CheckSquare,
   StickyNote,
   CalendarDays,
+  CalendarClock,
   BarChart3,
   BookMarked,
   Archive,
-  Plug,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -22,9 +22,9 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   clients: Users,
   projects: FolderKanban,
   tasks: CheckSquare,
+  planner: CalendarClock,
   notes: StickyNote,
   calendar: CalendarDays,
-  services: Plug,
   analytics: BarChart3,
   knowledge: BookMarked,
   archive: Archive,

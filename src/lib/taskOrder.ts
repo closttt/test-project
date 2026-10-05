@@ -39,3 +39,14 @@ export function placeInColumn(tasks: Task[], draggedId: string, columnIds: strin
   const last = others[others.length - 1];
   return last ? placeTask(tasks, draggedId, { afterId: last }) : placeTask(tasks, draggedId, { end: true });
 }
+
+/** Высокий → Средний → Низкий → без приоритета. `Priority` 0 means «none», so it ranks last. */
+export const PRIORITY_RANK: Record<number, number> = { 1: 0, 2: 1, 3: 2, 0: 3 };
+
+/**
+ * Kanban card order: priority first, so a high-priority card is always at the top of its column
+ * whatever else is there, then the manual drag order within one priority level.
+ */
+export function sortByPriority(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3) || a.order - b.order);
+}

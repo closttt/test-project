@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { placeTask, placeInColumn } from "@/lib/taskOrder";
+import { placeTask, placeInColumn, sortByPriority } from "@/lib/taskOrder";
 import type { Task } from "@/types";
 
 function task(id: string, order: number): Task {
@@ -38,5 +38,13 @@ describe("placeInColumn", () => {
   });
   it("dropping into an empty column sends the task to the global end", () => {
     expect(placeInColumn(tasks, "a", ["a"], null)).toEqual(["b", "c", "d", "a"]);
+  });
+});
+
+describe("sortByPriority (kanban columns)", () => {
+  it("puts Высокий on top, then Средний, Низкий, and no priority last — manual order inside a level", () => {
+    const p = (id: string, order: number, priority: Task["priority"]) => ({ ...task(id, order), priority });
+    const sorted = sortByPriority([p("none", 0, 0), p("low", 1, 3), p("high2", 5, 1), p("mid", 2, 2), p("high1", 4, 1)]);
+    expect(sorted.map((t) => t.id)).toEqual(["high1", "high2", "mid", "low", "none"]);
   });
 });

@@ -180,6 +180,37 @@ export function newDraft(raw = ""): LibraryDraft {
   };
 }
 
+/**
+ * The one-field add: every link in the pasted text becomes an item straight away — titled by its
+ * domain until the page's real title arrives (see `unfurlPatch`). Links already in the library are
+ * skipped, so pasting the same news twice doesn't duplicate it.
+ */
+export function linkDrafts(raw: string, existing: Pick<LibraryItem, "url">[]): LibraryDraft[] {
+  const known = new Set(existing.map((i) => i.url).filter(Boolean));
+  const out: LibraryDraft[] = [];
+  for (const { url, domain } of extractLinks(raw)) {
+    if (known.has(url)) continue;
+    known.add(url);
+    out.push({ ...newDraft(url), title: domain });
+  }
+  return out;
+}
+
+/**
+ * What an unfurl adds to a quick-added item: the real title (replacing the domain placeholder,
+ * never a title the user typed since), the preview image, the blurb and the author.
+ */
+export function unfurlPatch(meta: Unfurled, item: Pick<LibraryItem, "title" | "domain" | "coverUrl" | "description" | "author">): Partial<LibraryDraft> {
+  const patch: Partial<LibraryDraft> = {};
+  const placeholder = !item.title || item.title === item.domain;
+  if (meta.title?.trim() && placeholder) patch.title = meta.title.trim();
+  if (meta.image && !item.coverUrl) patch.coverUrl = meta.image;
+  if (meta.description && !item.description) patch.description = meta.description;
+  const author = meta.author || meta.siteName;
+  if (author && !item.author) patch.author = author;
+  return patch;
+}
+
 // ── Unfurl (og:title / og:image via our own serverless function) ─────────────────────────
 
 export interface Unfurled {

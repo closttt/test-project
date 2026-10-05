@@ -1,10 +1,41 @@
 /// <reference types="vitest" />
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
+/**
+ * `/api/unfurl` in-process during `npm run dev`. It needs no secrets and no session, so there is no
+ * reason to make link previews depend on `vercel dev` running alongside — every other `/api/*`
+ * still goes through the proxy below. The real Vercel handler is loaded as-is through Vite's SSR
+ * loader and given the small slice of the Vercel req/res API it uses.
+ */
+function devUnfurl(): Plugin {
+  return {
+    name: "dev-unfurl",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use("/api/unfurl", async (req, res) => {
+        try {
+          const mod = await server.ssrLoadModule("/api/unfurl.ts");
+          const url = new URL(req.url ?? "", "http://localhost");
+          const vreq = Object.assign(req, { query: Object.fromEntries(url.searchParams) });
+          const vres = Object.assign(res, {
+            status(code: number) { res.statusCode = code; return vres; },
+            json(body: unknown) { res.setHeader("Content-Type", "application/json; charset=utf-8"); res.end(JSON.stringify(body)); return vres; },
+          });
+          await mod.default(vreq, vres);
+        } catch (e) {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), devUnfurl()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

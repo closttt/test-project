@@ -48,7 +48,8 @@ export function countEntries(d: AppData | null | undefined): number {
     (d.notes?.length ?? 0) +
     (d.clients?.length ?? 0) +
     (d.students?.length ?? 0) +
-    (d.meetings?.length ?? 0)
+    (d.meetings?.length ?? 0) +
+    (d.planBlocks?.length ?? 0)
   );
 }
 

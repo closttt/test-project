@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectType, matchesLibraryQuery, sortLibrary, libraryTagCounts, newDraft, type LibraryItem } from "@/lib/library";
+import { detectType, matchesLibraryQuery, sortLibrary, libraryTagCounts, newDraft, linkDrafts, unfurlPatch, type LibraryItem } from "@/lib/library";
 
 function item(over: Partial<LibraryItem>): LibraryItem {
   return {
@@ -61,5 +61,23 @@ describe("libraryTagCounts / newDraft", () => {
     expect(d.domain).toBe("youtube.com");
     expect(d.type).toBe("video");
     expect(d.status).toBe("want");
+  });
+});
+
+describe("one-field add", () => {
+  it("turns every new link into a draft titled by its domain, skipping ones already saved", () => {
+    const drafts = linkDrafts("https://youtu.be/abc and https://habr.com/ru/articles/1/ https://youtu.be/abc", [{ url: "https://habr.com/ru/articles/1/" }]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({ url: "https://youtu.be/abc", title: "youtu.be", type: "video", status: "want" });
+    expect(linkDrafts("просто текст", [])).toEqual([]);
+  });
+  it("replaces the domain placeholder with the real title and fills the preview", () => {
+    const base = { title: "habr.com", domain: "habr.com" };
+    expect(unfurlPatch({ title: "Статья", image: "https://x/y.png", description: "о чём" }, base)).toEqual({
+      title: "Статья", coverUrl: "https://x/y.png", description: "о чём",
+    });
+  });
+  it("never overwrites a title the user typed meanwhile", () => {
+    expect(unfurlPatch({ title: "Статья" }, { title: "Моё название", domain: "habr.com" })).toEqual({});
   });
 });

@@ -1,6 +1,7 @@
 import type { AppData } from "@/types";
 import { DEFAULT_SETTINGS, DEFAULT_GAMIFICATION } from "@/types";
 import { uid } from "@/lib/id";
+import { defaultTemplates } from "@/lib/planner";
 
 /**
  * Starter workspace for a fresh install (empty localStorage). The board is otherwise EMPTY — no
@@ -33,5 +34,7 @@ export function seedData(): AppData {
     tasks: [],
     notes: [],
     meetings: [],
+    planBlocks: [],
+    planTemplates: defaultTemplates(),
   };
 }

@@ -8,6 +8,7 @@ const Clients = lazy(() => import("@/pages/Clients"));
 const Projects = lazy(() => import("@/pages/Projects"));
 const ProjectDetail = lazy(() => import("@/pages/ProjectDetail"));
 const Tasks = lazy(() => import("@/pages/Tasks"));
+const Planner = lazy(() => import("@/pages/Planner"));
 const Notes = lazy(() => import("@/pages/Notes"));
 const CalendarPage = lazy(() => import("@/pages/CalendarPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
@@ -17,7 +18,6 @@ const Changelog = lazy(() => import("@/pages/Changelog"));
 const Analytics = lazy(() => import("@/pages/Analytics"));
 const Archive = lazy(() => import("@/pages/Archive"));
 const Knowledge = lazy(() => import("@/pages/Knowledge"));
-const Services = lazy(() => import("@/pages/Services"));
 
 function PageFallback() {
   return (
@@ -39,14 +39,16 @@ export default function App() {
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/tasks" element={<Tasks />} />
+          <Route path="/planner" element={<Planner />} />
           <Route path="/notes" element={<Notes />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/archive" element={<Archive />} />
           <Route path="/knowledge" element={<Knowledge />} />
-          <Route path="/services" element={<Services />} />
-          {/* Old bookmark: mail is a pane of the hub now. */}
-          <Route path="/mail" element={<Navigate to="/services?tool=gmail" replace />} />
+          {/* «Сервисы» (почта, Notion) отключены целиком — старые закладки ведут на дашборд.
+              Код раздела остался в pages/Services.tsx: вернуть = маршрут + пункт навигации. */}
+          <Route path="/services" element={<Navigate to="/" replace />} />
+          <Route path="/mail" element={<Navigate to="/" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/achievements" element={<Achievements />} />
           <Route path="/changelog" element={<Changelog />} />

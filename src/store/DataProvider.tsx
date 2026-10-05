@@ -18,9 +18,11 @@ import type {
   PomodoroSession,
   Recurrence,
   ProjectTemplateTask,
+  PlanBlock,
+  PlanTemplate,
 } from "@/types";
 import { ACCENTS } from "@/types";
-import { loadData, createDebouncedSaver } from "@/lib/storage";
+import { loadData, createDebouncedSaver, migrate } from "@/lib/storage";
 import {
   cloudSyncEnabled,
   fetchRemote,
@@ -146,6 +148,17 @@ interface DataContextValue extends AppData {
   /** Creates a project and immediately seeds it with a template's sections + starter tasks. */
   createProjectFromTemplate: (name: string, templateId: string) => void;
   updateGamification: (patch: Partial<Gamification>) => void;
+  /** «Планер»: always arrays here (AppData keeps them optional for old saves). */
+  planBlocks: PlanBlock[];
+  planTemplates: PlanTemplate[];
+  /** Returns the new block's id. */
+  addPlanBlock: (input: Omit<PlanBlock, "id">) => string;
+  updatePlanBlock: (id: string, patch: Partial<PlanBlock>) => void;
+  deletePlanBlock: (id: string) => void;
+  restorePlanBlock: (block: PlanBlock) => void;
+  addPlanTemplate: (input: Omit<PlanTemplate, "id">) => void;
+  updatePlanTemplate: (id: string, patch: Partial<PlanTemplate>) => void;
+  deletePlanTemplate: (id: string) => void;
   replaceAll: (data: AppData) => void;
   clientRisk: (client: Client) => RiskLevel;
   /** Full arrays including archived — for export and the Archive page. */
@@ -254,7 +267,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           lastSeenRemoteAt: meta.lastSeenRemoteAt,
         });
         if (decision.action === "pull") {
-          setData(remote.data as AppData);
+          setData(migrate(remote.data as AppData));
           saveSyncMeta({ lastSeenRemoteAt: remote.updatedAt ?? undefined });
           setSync({ state: "ok", at: new Date().toISOString(), direction: "pulled" });
         } else if (decision.action === "conflict") {
@@ -337,7 +350,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             lastSeenRemoteAt: meta.lastSeenRemoteAt,
           });
           if (decision.action !== "pull") return;
-          setData(remote.data as AppData);
+          setData(migrate(remote.data as AppData));
           saveSyncMeta({ lastSeenRemoteAt: remote.updatedAt ?? undefined });
           setSync({ state: "ok", at: new Date().toISOString(), direction: "pulled" });
         })
@@ -372,6 +385,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       projects: data.projects.filter((p) => !p.archivedAt),
       notes: data.notes.filter((n) => !n.archivedAt),
       allTasks: data.tasks,
+      planBlocks: data.planBlocks ?? [],
+      planTemplates: data.planTemplates ?? [],
       allProjects: data.projects,
       allNotes: data.notes,
       archivedTasks: data.tasks.filter((t) => t.archivedAt),
@@ -395,7 +410,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               setSync({ state: "error", message: "В облаке пока пусто — нечего загружать." });
               return;
             }
-            setData(remote.data as AppData);
+            setData(migrate(remote.data as AppData));
             saveSyncMeta({ lastSeenRemoteAt: remote.updatedAt ?? undefined });
             setSync({ state: "ok", at: new Date().toISOString(), direction: "pulled" });
           })
@@ -969,6 +984,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }),
       updateGamification: (patch) =>
         setData((d) => ({ ...d, gamification: { ...d.gamification, ...patch } })),
+
+      addPlanBlock: (input) => {
+        const id = uid();
+        setData((d) => ({ ...d, planBlocks: [...(d.planBlocks ?? []), { ...input, id }] }));
+        return id;
+      },
+      updatePlanBlock: (id, patch) =>
+        setData((d) => ({ ...d, planBlocks: (d.planBlocks ?? []).map((b) => (b.id === id ? { ...b, ...patch } : b)) })),
+      deletePlanBlock: (id) =>
+        setData((d) => ({ ...d, planBlocks: (d.planBlocks ?? []).filter((b) => b.id !== id) })),
+      restorePlanBlock: (block) =>
+        setData((d) => ({ ...d, planBlocks: [...(d.planBlocks ?? []).filter((b) => b.id !== block.id), block] })),
+      addPlanTemplate: (input) =>
+        setData((d) => ({ ...d, planTemplates: [...(d.planTemplates ?? []), { ...input, id: uid() }] })),
+      updatePlanTemplate: (id, patch) =>
+        setData((d) => ({ ...d, planTemplates: (d.planTemplates ?? []).map((t) => (t.id === id ? { ...t, ...patch } : t)) })),
+      deletePlanTemplate: (id) =>
+        setData((d) => ({ ...d, planTemplates: (d.planTemplates ?? []).filter((t) => t.id !== id) })),
       replaceAll: (next) => {
         // A pending undo entry from before the replacement would restore an object into a
         // dataset it no longer belongs to — drop the stack along with swapping the data.

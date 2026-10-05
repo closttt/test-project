@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useToast } from "@/store/ToastProvider";
 import { pushUndo } from "@/lib/undoStack";
@@ -33,7 +33,14 @@ export interface LibraryState {
  */
 export function useLibrary(): LibraryState {
   const { toast } = useToast();
-  const [items, setItems] = useState<LibraryItem[]>([]);
+  const [items, setItemsState] = useState<LibraryItem[]>([]);
+  // The latest list, for mutations that run after an await (quick-add of several links, a
+  // background unfurl): reading `items` from the closure there would write back a stale list.
+  const itemsRef = useRef<LibraryItem[]>([]);
+  const setItems = useCallback((next: LibraryItem[] | ((cur: LibraryItem[]) => LibraryItem[])) => {
+    itemsRef.current = typeof next === "function" ? next(itemsRef.current) : next;
+    setItemsState(itemsRef.current);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,7 +56,7 @@ export function useLibrary(): LibraryState {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setItems]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -59,17 +66,17 @@ export function useLibrary(): LibraryState {
 
   const add = useCallback(async (draft: LibraryDraft) => {
     try {
-      const { items: next, item } = await addLibraryItem(items, draft);
-      setItems(next);
+      const { item } = await addLibraryItem(itemsRef.current, draft);
+      setItems((cur) => [item, ...cur.filter((i) => i.id !== item.id)]);
       return item;
     } catch (e) {
       fail(e);
       return null;
     }
-  }, [items, fail]);
+  }, [setItems, fail]);
 
   const update = useCallback(async (id: string, patch: Partial<LibraryDraft>) => {
-    const prev = items;
+    const prev = itemsRef.current;
     setItems((cur) => cur.map((i) => (i.id === id ? { ...i, ...patch, updatedAt: new Date().toISOString() } : i)));
     try {
       await updateLibraryItem(prev, id, patch);
@@ -77,10 +84,10 @@ export function useLibrary(): LibraryState {
       setItems(prev);
       fail(e);
     }
-  }, [items, fail]);
+  }, [setItems, fail]);
 
   const remove = useCallback(async (item: LibraryItem) => {
-    const prev = items;
+    const prev = itemsRef.current;
     setItems((cur) => cur.filter((i) => i.id !== item.id));
     try {
       await removeLibraryItem(prev, item.id);
@@ -90,10 +97,10 @@ export function useLibrary(): LibraryState {
       return;
     }
     const run = pushUndo(`Удалено из библиотеки: ${item.title}`, () => {
-      restoreLibraryItem(items.filter((i) => i.id !== item.id), item).then(setItems).catch(fail);
+      restoreLibraryItem(itemsRef.current.filter((i) => i.id !== item.id), item).then(setItems).catch(fail);
     });
     toast(`Удалено: ${item.title}`, { actionLabel: "Вернуть", onAction: run });
-  }, [items, fail, toast]);
+  }, [setItems, fail, toast]);
 
   return { items, loading, error, cloud: libraryUsesCloud(), reload, add, update, remove };
 }

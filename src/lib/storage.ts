@@ -1,5 +1,6 @@
 import type { AppData } from "@/types";
 import { DEFAULT_SETTINGS, DEFAULT_GAMIFICATION, DEFAULT_POMODORO } from "@/types";
+import { defaultTemplates } from "@/lib/planner";
 
 const STORAGE_KEY = "crm-taskmanager-data-v1";
 
@@ -9,6 +10,9 @@ export function migrate(data: AppData): AppData {
   // Nested settings added in v2.0 — backfill sub-objects so partial saves stay valid.
   data.settings.pomodoro = { ...DEFAULT_POMODORO, ...(data.settings.pomodoro ?? {}) };
   data.pomodoroSessions = data.pomodoroSessions ?? [];
+  // «Планер» (v4.0): blocks start empty, routines start from the starter set.
+  data.planBlocks = data.planBlocks ?? [];
+  data.planTemplates = data.planTemplates ?? defaultTemplates();
 
   // Trash auto-purge: permanently drop archived items older than trashPurgeDays.
   const purgeDays = data.settings.trashPurgeDays ?? 0;
