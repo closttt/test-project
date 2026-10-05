@@ -42,6 +42,8 @@ import { daysSince, todayStr, localDayStr } from "@/lib/format";
 import { xpForTaskCompletion } from "@/lib/gamification";
 import { playPop } from "@/lib/sound";
 import { clearUndo } from "@/lib/undoStack";
+import { mergeCalendarMeetings } from "@/lib/ical";
+import type { ApplyCalendar } from "@/lib/gcal";
 
 /** Consecutive days with completions ending today/yesterday — used to keep bestStreak fresh. */
 function streakOf(log: Record<string, number>): number {
@@ -160,6 +162,8 @@ interface DataContextValue extends AppData {
   updatePlanTemplate: (id: string, patch: Partial<PlanTemplate>) => void;
   deletePlanTemplate: (id: string) => void;
   planDismissed: string[];
+  /** Google Calendar sync: merge the feed's occurrences into meetings, report what changed. */
+  applyCalendarSync: ApplyCalendar;
   /** Hide / bring back a kanban task's auto-placed copy on one day of the planner. */
   setPlanDismissed: (key: string, dismissed: boolean) => void;
   replaceAll: (data: AppData) => void;
@@ -1004,6 +1008,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setData((d) => ({ ...d, planTemplates: [...(d.planTemplates ?? []), { ...input, id: uid() }] })),
       updatePlanTemplate: (id, patch) =>
         setData((d) => ({ ...d, planTemplates: (d.planTemplates ?? []).map((t) => (t.id === id ? { ...t, ...patch } : t)) })),
+      applyCalendarSync: (occ, windowFrom) => {
+        const r = mergeCalendarMeetings(dataRef.current.meetings, occ, windowFrom, uid);
+        if (r.meetings !== dataRef.current.meetings) setData((d) => ({ ...d, meetings: mergeCalendarMeetings(d.meetings, occ, windowFrom, uid).meetings }));
+        return { added: r.added, updated: r.updated, removed: r.removed };
+      },
       setPlanDismissed: (key, dismissed) =>
         setData((d) => {
           const rest = (d.planDismissed ?? []).filter((k) => k !== key);

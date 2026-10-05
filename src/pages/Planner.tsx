@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ChevronLeft, ChevronRight, Pin, Plus, Minus, Search, Trash2, X, ListTodo, ExternalLink, LayoutGrid } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pin, Plus, Minus, Search, Trash2, X, ListTodo, ExternalLink, LayoutGrid, Video } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,9 @@ const PX_PER_MIN = HOUR_PX / 60;
 const OPEN_AT_HOUR = 7;
 /** Pointer travel before a press becomes a drag — below it, a press on a block is a click. */
 const DRAG_THRESHOLD = 4;
+/** Id prefix of a meeting shown on the grid — fixed in time, it is moved in the calendar, not here. */
+const MEET_PREFIX = "meet:";
+const isMeetingBlock = (b: Pick<PlanBlock, "id">) => b.id.startsWith(MEET_PREFIX);
 /** «Задачи с канбана» on/off — a view preference of this browser, on by default. */
 const KANBAN_MIRROR_KEY = "crm-planner-kanban-v1";
 
@@ -72,7 +75,7 @@ interface DragLive {
  */
 export default function Planner() {
   const {
-    tasks, planBlocks, planTemplates, planDismissed, settings,
+    tasks, meetings, planBlocks, planTemplates, planDismissed, settings,
     addPlanBlock, updatePlanBlock, deletePlanBlock, restorePlanBlock, setPlanDismissed,
     addPlanTemplate, deletePlanTemplate, updateTask, toggleTask,
   } = useData();
@@ -112,6 +115,28 @@ export default function Planner() {
   const taskById = useMemo(() => new Map(tasks.map((t) => [t.id, t] as const)), [tasks]);
   const storedWeek = useMemo(() => planBlocks.filter((b) => dates.has(b.date)), [planBlocks, dates]);
 
+  /** Meetings (Google Calendar and hand-made) on their day and hour — read-only blocks. */
+  const meetingBlocks = useMemo<PlanBlock[]>(
+    () =>
+      meetings
+        .filter((m) => dates.has(m.date) && /^\d{1,2}:\d{2}$/.test(m.time ?? ""))
+        .map((m) => {
+          const [h, mi] = m.time.split(":").map(Number);
+          const startMin = Math.min(DAY_MIN - 15, h * 60 + mi);
+          return {
+            id: `${MEET_PREFIX}${m.id}`,
+            date: m.date,
+            startMin,
+            durationMin: Math.max(15, Math.min(m.durationMin || 30, DAY_MIN - startMin)),
+            title: m.title,
+            color: "slate",
+            done: m.done,
+          };
+        }),
+    [meetings, dates]
+  );
+  const meetingUrl = useMemo(() => new Map<string, string | undefined>(meetings.map((m) => [`${MEET_PREFIX}${m.id}`, m.url])), [meetings]);
+
   /**
    * The kanban, mirrored: every open task of the week board shows on its day as a draft block
    * (dashed, coloured by priority), stacked from 09:00 around what is already planned. Moving,
@@ -129,12 +154,19 @@ export default function Planner() {
       return autoPlaceDay(
         d.date,
         dayTasks.map((t) => ({ taskId: t.id, title: t.title, durationMin: durationForTask(t.estimateMin), priority: t.priority })),
-        storedWeek.filter((b) => b.date === d.date)
+        [...storedWeek, ...meetingBlocks].filter((b) => b.date === d.date)
       );
     });
-  }, [mirrorKanban, planBlocks, planDismissed, tasks, days, storedWeek]);
+  }, [mirrorKanban, planBlocks, planDismissed, tasks, days, storedWeek, meetingBlocks]);
 
-  const weekBlocks = useMemo(() => [...storedWeek, ...autoBlocks], [storedWeek, autoBlocks]);
+  const weekBlocks = useMemo(() => [...meetingBlocks, ...storedWeek, ...autoBlocks], [meetingBlocks, storedWeek, autoBlocks]);
+
+  /** A meeting block opens its call link; there is nothing to edit here — the calendar owns it. */
+  function openMeeting(block: PlanBlock) {
+    const url = meetingUrl.get(block.id);
+    if (url) window.open(url, "_blank", "noopener");
+    else toast(`${block.title} · ${formatRange(block.startMin, block.durationMin)} — встреча, время меняется в календаре`);
+  }
   const plannedTaskIds = useMemo(() => new Set(weekBlocks.map((b) => b.taskId).filter(Boolean)), [weekBlocks]);
   const blockTitle = (b: PlanBlock) => (b.taskId && taskById.get(b.taskId)?.title) || b.title;
   const blockDone = (b: PlanBlock) => (b.taskId ? taskById.get(b.taskId)?.done ?? !!b.done : !!b.done);
@@ -360,18 +392,25 @@ export default function Planner() {
                       const title = blockTitle(block);
                       const tall = duration * PX_PER_MIN >= 44;
                       const draft = isAutoBlock(block);
+                      const meeting = isMeetingBlock(block);
                       return (
                         <div
                           key={block.id}
                           role="button"
                           tabIndex={0}
-                          aria-label={`${title}, ${formatRange(block.startMin, duration)}${draft ? ", с канбана" : ""}`}
-                          title={draft ? "С канбана — перетащите или растяните, чтобы закрепить" : undefined}
-                          onPointerDown={(e) => beginDrag(e, { kind: "move", block, grabMin: (e.clientY - e.currentTarget.getBoundingClientRect().top) / PX_PER_MIN })}
-                          onKeyDown={(e) => { if (e.key === "Enter") setEditingId(block.id); if (e.key === "Delete") removeBlock(block); }}
+                          aria-label={`${meeting ? "Встреча: " : ""}${title}, ${formatRange(block.startMin, duration)}${draft ? ", с канбана" : ""}`}
+                          title={draft ? "С канбана — перетащите или растяните, чтобы закрепить" : meeting ? (meetingUrl.get(block.id) ? "Встреча — клик откроет ссылку на созвон" : "Встреча") : undefined}
+                          onPointerDown={meeting ? undefined : (e) => beginDrag(e, { kind: "move", block, grabMin: (e.clientY - e.currentTarget.getBoundingClientRect().top) / PX_PER_MIN })}
+                          onClick={meeting ? () => openMeeting(block) : undefined}
+                          onKeyDown={(e) => {
+                            if (meeting) { if (e.key === "Enter") openMeeting(block); return; }
+                            if (e.key === "Enter") setEditingId(block.id);
+                            if (e.key === "Delete") removeBlock(block);
+                          }}
                           className={cn(
                             "group absolute touch-none overflow-hidden rounded-md border-l-[3px] px-1.5 py-0.5 text-xs shadow-sm transition-opacity",
-                            "cursor-grab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+                            meeting ? "cursor-pointer" : "cursor-grab",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
                             PLAN_COLORS[block.color].block,
                             done && "opacity-50",
                             // A kanban draft: dashed outline until it is moved, stretched or opened.
@@ -380,25 +419,28 @@ export default function Planner() {
                           )}
                           style={{
                             top: block.startMin * PX_PER_MIN + 1,
-                            height: duration * PX_PER_MIN - 2,
+                            height: Math.max(duration, 20) * PX_PER_MIN - 2,
                             left: `calc(${(lane / lanes) * 100}% + 2px)`,
                             width: `calc(${100 / lanes}% - 4px)`,
                           }}
                         >
-                          <p className={cn("truncate font-medium leading-tight", done && "line-through")}>{title}</p>
+                          <p className={cn("truncate font-medium leading-tight", done && "line-through")}>
+                            {meeting && <Video className="mr-1 inline h-3 w-3 align-[-2px] text-muted-foreground" />}
+                            {title}
+                          </p>
                           {tall && (
                             <p className="truncate text-[0.65rem] tabular-nums text-muted-foreground">
                               {formatRange(block.startMin, duration)} · {formatDuration(duration)}
                             </p>
                           )}
                           {/* Stretch handle — the whole bottom edge. */}
-                          <div
+                          {!meeting && <div
                             onPointerDown={(e) => beginResize(e, block)}
                             className="absolute inset-x-0 bottom-0 flex h-2 cursor-ns-resize justify-center"
                             aria-hidden
                           >
                             <span className="mt-0.5 h-0.5 w-6 rounded-full bg-foreground/0 transition-colors group-hover:bg-foreground/40" />
-                          </div>
+                          </div>}
                         </div>
                       );
                     })}

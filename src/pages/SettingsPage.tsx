@@ -3,6 +3,7 @@ import { Moon, Sun, AlertTriangle, Trash2, Download, Upload, Bell, Trophy, Timer
 
 import { AppShell } from "@/components/layout/AppShell";
 import { IntegrationsCard } from "@/components/IntegrationsCard";
+import { GoogleCalendarCard } from "@/components/GoogleCalendarCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -317,6 +318,10 @@ export default function SettingsPage() {
   return (
     <AppShell title="Настройки" description="Порог зоны риска, тема и данные">
       <StaggerList className="flex max-w-2xl flex-col gap-4">
+        <StaggerItem>
+          <GoogleCalendarCard />
+        </StaggerItem>
+
         <StaggerItem>
           <Card>
             <CardHeader className="pb-2">

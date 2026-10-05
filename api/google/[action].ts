@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { isAuthenticated, requireSession } from "../_lib/session.js";
+import { isAuthenticated, jsonBody, requireSession } from "../_lib/session.js";
 import {
   GOOGLE_SCOPES,
   exchangeCode,
@@ -14,7 +14,8 @@ import {
 } from "../_lib/google.js";
 
 /**
- * The Google OAuth dance in ONE serverless function: /api/google/auth, /callback, /disconnect.
+ * The Google OAuth dance in ONE serverless function: /api/google/auth, /callback, /disconnect —
+ * plus /api/google/ical, the Calendar feed relay.
  * Merged to stay under the Hobby plan's 12-function ceiling (see api/auth/[action].ts). The URLs
  * are unchanged, which matters most for `/api/google/callback` — it is registered verbatim as the
  * redirect URI in the Google Cloud console.
@@ -30,6 +31,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return callback(req, res);
     case "disconnect":
       return disconnect(req, res);
+    case "ical":
+      return ical(req, res);
     default:
       res.status(404).json({ error: `Неизвестное действие Google: ${action}` });
   }
@@ -114,5 +117,62 @@ async function disconnect(req: VercelRequest, res: VercelResponse): Promise<void
     res.status(200).json({ ok: true });
   } catch (e) {
     res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+/**
+ * Hosts a calendar's secret iCal address can live on. The relay fetches nothing else, so it can't
+ * be turned into an open proxy.
+ */
+const ICAL_HOSTS = [/^calendar\.google\.com$/i, /^outlook\.(office365|live)\.com$/i, /(^|\.)icloud\.com$/i, /^calendar\.yandex\.ru$/i];
+const ICAL_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * POST {url} → the raw .ics text of a calendar feed (Google's «Закрытый адрес в формате iCal»).
+ * The browser can't read it itself (CORS); parsing, repeat expansion and time zones happen in the
+ * app (src/lib/ical.ts). The url travels in the body, not the query string, so the secret address
+ * doesn't end up in request logs.
+ */
+async function ical(req: VercelRequest, res: VercelResponse): Promise<void> {
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
+  if (!requireSession(req, res)) return;
+  const raw = String(jsonBody(req).url ?? "").trim().replace(/^webcals?:\/\//i, "https://");
+  let target: URL;
+  try {
+    target = new URL(raw);
+  } catch {
+    res.status(400).json({ error: "Это не ссылка. Нужен «Закрытый адрес в формате iCal» из настроек календаря." });
+    return;
+  }
+  if (target.protocol !== "https:" || !ICAL_HOSTS.some((re) => re.test(target.hostname))) {
+    res.status(400).json({ error: "Поддерживаются iCal-ссылки Google Календаря (calendar.google.com), Outlook, iCloud и Яндекса." });
+    return;
+  }
+  try {
+    const upstream = await fetch(target, { redirect: "follow", signal: AbortSignal.timeout(15000), headers: { Accept: "text/calendar, */*" } });
+    if (!upstream.ok) {
+      const hint = upstream.status === 404 || upstream.status === 403
+        ? " Похоже, адрес сброшен или неверный — скопируйте его заново из настроек календаря."
+        : "";
+      res.status(502).json({ error: `Календарь ответил ${upstream.status}.${hint}` });
+      return;
+    }
+    const text = await upstream.text();
+    if (text.length > ICAL_MAX_BYTES) {
+      res.status(413).json({ error: "Календарь слишком большой (больше 8 МБ)." });
+      return;
+    }
+    if (!text.includes("BEGIN:VCALENDAR")) {
+      res.status(502).json({ error: "По ссылке не календарь. Нужен именно «Закрытый адрес в формате iCal»." });
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.status(200).send(text);
+  } catch (e) {
+    res.status(502).json({ error: `Не удалось загрузить календарь: ${e instanceof Error ? e.message : String(e)}` });
   }
 }

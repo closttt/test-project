@@ -256,6 +256,10 @@ export interface Meeting {
   /** Same picker as tasks — a meeting shows up in the task list and ranks alongside them. */
   priority?: Priority;
   tags?: string[];
+  /** "gcal" = imported from Google Calendar (iCal); updated/removed by the sync, not by hand. */
+  source?: "gcal";
+  /** Calendar occurrence key (`UID#startMs`) — how the sync recognises this meeting next time. */
+  externalId?: string;
 }
 
 export type PlanColor = "blue" | "green" | "violet" | "orange" | "rose" | "slate";

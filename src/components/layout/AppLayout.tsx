@@ -11,6 +11,7 @@ import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import { ReminderEngine } from "@/components/ReminderEngine";
 import { GamificationEngine } from "@/components/GamificationEngine";
 import { MeetingSyncEngine } from "@/components/MeetingSyncEngine";
+import { CalendarSyncEngine } from "@/components/CalendarSyncEngine";
 import { AiAssistant } from "@/components/AiAssistant";
 import { useUI } from "@/store/UIProvider";
 import { useToast } from "@/store/ToastProvider";
@@ -91,6 +92,7 @@ export function AppLayout() {
       <ReminderEngine />
       <GamificationEngine />
       <MeetingSyncEngine />
+      <CalendarSyncEngine />
       <AiAssistant />
     </div>
   );
