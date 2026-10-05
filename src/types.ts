@@ -397,6 +397,9 @@ export interface AppData {
   planBlocks?: PlanBlock[];
   /** Pinned routines in the planner's side panel. Undefined = never set up → starter set. */
   planTemplates?: PlanTemplate[];
+  /** Kanban tasks taken off the planner by hand, as `${taskId}@${date}` — move the task to another
+   * day on the kanban and it shows up there again. */
+  planDismissed?: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {

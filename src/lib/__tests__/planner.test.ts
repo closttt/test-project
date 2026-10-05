@@ -11,6 +11,9 @@ import {
   layoutDay,
   dayShort,
   defaultTemplates,
+  autoPlaceDay,
+  isAutoBlock,
+  DAY_MIN,
 } from "@/lib/planner";
 import { migrate } from "@/lib/storage";
 import { seedData } from "@/lib/seed";
@@ -104,5 +107,23 @@ describe("planner data", () => {
     expect(migrated.planTemplates).toHaveLength(3);
     const kept = migrate({ ...seedData(), planTemplates: [] });
     expect(kept.planTemplates).toEqual([]);
+  });
+});
+
+describe("autoPlaceDay — kanban tasks mirrored onto the grid", () => {
+  const t = (taskId: string, durationMin: number, priority = 0) => ({ taskId, title: taskId, durationMin, priority });
+  it("stacks the day's tasks from 09:00 in the given order", () => {
+    const out = autoPlaceDay("2026-10-05", [t("a", 60, 1), t("b", 90, 2), t("c", 30)], []);
+    expect(out.map((b) => [b.taskId, b.startMin, b.durationMin])).toEqual([["a", 540, 60], ["b", 600, 90], ["c", 690, 30]]);
+    expect(out[0]).toMatchObject({ id: "auto:a", color: "rose", date: "2026-10-05" });
+    expect(isAutoBlock(out[0])).toBe(true);
+  });
+  it("flows around what is already planned", () => {
+    const out = autoPlaceDay("2026-10-05", [t("a", 60), t("b", 60)], [{ startMin: 540, durationMin: 90 }]);
+    expect(out.map((b) => b.startMin)).toEqual([630, 690]);
+  });
+  it("falls back to 09:00 rather than hiding a task that doesn't fit", () => {
+    const out = autoPlaceDay("2026-10-05", [t("a", 60)], [{ startMin: 540, durationMin: DAY_MIN - 540 }]);
+    expect(out[0].startMin).toBe(540);
   });
 });

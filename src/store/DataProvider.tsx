@@ -159,6 +159,9 @@ interface DataContextValue extends AppData {
   addPlanTemplate: (input: Omit<PlanTemplate, "id">) => void;
   updatePlanTemplate: (id: string, patch: Partial<PlanTemplate>) => void;
   deletePlanTemplate: (id: string) => void;
+  planDismissed: string[];
+  /** Hide / bring back a kanban task's auto-placed copy on one day of the planner. */
+  setPlanDismissed: (key: string, dismissed: boolean) => void;
   replaceAll: (data: AppData) => void;
   clientRisk: (client: Client) => RiskLevel;
   /** Full arrays including archived — for export and the Archive page. */
@@ -387,6 +390,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       allTasks: data.tasks,
       planBlocks: data.planBlocks ?? [],
       planTemplates: data.planTemplates ?? [],
+      planDismissed: data.planDismissed ?? [],
       allProjects: data.projects,
       allNotes: data.notes,
       archivedTasks: data.tasks.filter((t) => t.archivedAt),
@@ -1000,6 +1004,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setData((d) => ({ ...d, planTemplates: [...(d.planTemplates ?? []), { ...input, id: uid() }] })),
       updatePlanTemplate: (id, patch) =>
         setData((d) => ({ ...d, planTemplates: (d.planTemplates ?? []).map((t) => (t.id === id ? { ...t, ...patch } : t)) })),
+      setPlanDismissed: (key, dismissed) =>
+        setData((d) => {
+          const rest = (d.planDismissed ?? []).filter((k) => k !== key);
+          return { ...d, planDismissed: dismissed ? [...rest, key] : rest };
+        }),
       deletePlanTemplate: (id) =>
         setData((d) => ({ ...d, planTemplates: (d.planTemplates ?? []).filter((t) => t.id !== id) })),
       replaceAll: (next) => {

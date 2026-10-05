@@ -139,3 +139,54 @@ export function dayShort(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
   return DAY_SHORT[new Date(y, (m ?? 1) - 1, d ?? 1).getDay()];
 }
+
+/** Where the auto-placed kanban tasks start stacking each day. */
+export const AUTO_START_MIN = 9 * 60;
+/** Id prefix of a block that is only a projection of a kanban task, not stored yet. */
+export const AUTO_PREFIX = "auto:";
+
+export function isAutoBlock(b: Pick<PlanBlock, "id">): boolean {
+  return b.id.startsWith(AUTO_PREFIX);
+}
+
+/** Priority → block colour for auto-placed tasks: the kanban's own reds/ambers/blues. */
+export const PRIORITY_PLAN_COLOR: Record<number, PlanColor> = { 1: "rose", 2: "orange", 3: "blue", 0: "slate" };
+
+export interface AutoTask {
+  taskId: string;
+  title: string;
+  durationMin: number;
+  priority: number;
+}
+
+/**
+ * The kanban mirrored onto one day: each task of that day (already in priority order) becomes a
+ * draft block in the first free stretch from 09:00, after whatever is already planned there, so a
+ * fresh week opens with everything visible and nothing piled on top of each other. A task that no
+ * longer fits before midnight still shows, at 09:00 — overlapping is better than hiding it.
+ */
+export function autoPlaceDay(date: string, tasks: AutoTask[], occupied: Pick<PlanBlock, "startMin" | "durationMin">[]): PlanBlock[] {
+  const busy = occupied.map((b) => [b.startMin, b.startMin + b.durationMin] as [number, number]);
+  const out: PlanBlock[] = [];
+  for (const t of tasks) {
+    const len = Math.min(t.durationMin, DAY_MIN);
+    let start = AUTO_START_MIN;
+    for (;;) {
+      const clash = busy.find(([s, e]) => start < e && start + len > s);
+      if (!clash) break;
+      start = Math.ceil(clash[1] / SLOT_MIN) * SLOT_MIN;
+    }
+    if (start + len > DAY_MIN) start = AUTO_START_MIN;
+    busy.push([start, start + len]);
+    out.push({
+      id: `${AUTO_PREFIX}${t.taskId}`,
+      date,
+      startMin: start,
+      durationMin: len,
+      title: t.title,
+      color: PRIORITY_PLAN_COLOR[t.priority] ?? "slate",
+      taskId: t.taskId,
+    });
+  }
+  return out;
+}

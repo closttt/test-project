@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ChevronLeft, ChevronRight, Pin, Plus, Minus, Search, Trash2, X, ListTodo, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pin, Plus, Minus, Search, Trash2, X, ListTodo, ExternalLink, LayoutGrid } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,9 @@ import { TaskEditDialog } from "@/components/TaskEditDialog";
 import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
 import { pushUndo } from "@/lib/undoStack";
-import { PRIORITY_RANK } from "@/lib/taskOrder";
-import { weekDays, weekRangeLabel } from "@/lib/weekBoard";
+import { PRIORITY_RANK, sortByPriority } from "@/lib/taskOrder";
+import { weekDays, weekRangeLabel, weekColumnOf } from "@/lib/weekBoard";
+import { localDayStr } from "@/lib/format";
 import {
   DAY_MIN,
   SLOT_MIN,
@@ -27,6 +28,8 @@ import {
   totalMinutes,
   layoutDay,
   dayShort,
+  autoPlaceDay,
+  isAutoBlock,
 } from "@/lib/planner";
 import { cn } from "@/lib/utils";
 import { PRIORITY_META, type PlanBlock, type PlanColor, type Task } from "@/types";
@@ -38,6 +41,8 @@ const PX_PER_MIN = HOUR_PX / 60;
 const OPEN_AT_HOUR = 7;
 /** Pointer travel before a press becomes a drag — below it, a press on a block is a click. */
 const DRAG_THRESHOLD = 4;
+/** «Задачи с канбана» on/off — a view preference of this browser, on by default. */
+const KANBAN_MIRROR_KEY = "crm-planner-kanban-v1";
 
 /** What is being carried onto the grid. */
 interface Source {
@@ -67,8 +72,8 @@ interface DragLive {
  */
 export default function Planner() {
   const {
-    tasks, planBlocks, planTemplates, settings,
-    addPlanBlock, updatePlanBlock, deletePlanBlock, restorePlanBlock,
+    tasks, planBlocks, planTemplates, planDismissed, settings,
+    addPlanBlock, updatePlanBlock, deletePlanBlock, restorePlanBlock, setPlanDismissed,
     addPlanTemplate, deletePlanTemplate, updateTask, toggleTask,
   } = useData();
   const { toast } = useToast();
@@ -88,6 +93,12 @@ export default function Planner() {
   const [tplMin, setTplMin] = useState(60);
   const [tplColor, setTplColor] = useState<PlanColor>("blue");
   const [nowMin, setNowMin] = useState(() => minutesNow());
+  const [mirrorKanban, setMirrorKanban] = useState(() => {
+    try { return localStorage.getItem(KANBAN_MIRROR_KEY) !== "off"; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(KANBAN_MIRROR_KEY, mirrorKanban ? "on" : "off"); } catch { /* private mode */ }
+  }, [mirrorKanban]);
 
   // Open on the morning; the night hours are a scroll away, not the first thing you see.
   useEffect(() => {
@@ -99,7 +110,31 @@ export default function Planner() {
   }, []);
 
   const taskById = useMemo(() => new Map(tasks.map((t) => [t.id, t] as const)), [tasks]);
-  const weekBlocks = useMemo(() => planBlocks.filter((b) => dates.has(b.date)), [planBlocks, dates]);
+  const storedWeek = useMemo(() => planBlocks.filter((b) => dates.has(b.date)), [planBlocks, dates]);
+
+  /**
+   * The kanban, mirrored: every open task of the week board shows on its day as a draft block
+   * (dashed, coloured by priority), stacked from 09:00 around what is already planned. Moving,
+   * stretching or opening one turns it into a real block; until then it simply follows the task —
+   * move the card to another day on the kanban and the draft moves with it.
+   */
+  const autoBlocks = useMemo(() => {
+    if (!mirrorKanban) return [];
+    const placed = new Set(planBlocks.map((b) => b.taskId).filter(Boolean));
+    const hidden = new Set(planDismissed);
+    const today = localDayStr();
+    const open = tasks.filter((t) => !t.done && !placed.has(t.id) && !(t.snoozedUntil && t.snoozedUntil > today));
+    return days.flatMap((d) => {
+      const dayTasks = sortByPriority(open.filter((t) => weekColumnOf(t, days) === d.date && !hidden.has(`${t.id}@${d.date}`)));
+      return autoPlaceDay(
+        d.date,
+        dayTasks.map((t) => ({ taskId: t.id, title: t.title, durationMin: durationForTask(t.estimateMin), priority: t.priority })),
+        storedWeek.filter((b) => b.date === d.date)
+      );
+    });
+  }, [mirrorKanban, planBlocks, planDismissed, tasks, days, storedWeek]);
+
+  const weekBlocks = useMemo(() => [...storedWeek, ...autoBlocks], [storedWeek, autoBlocks]);
   const plannedTaskIds = useMemo(() => new Set(weekBlocks.map((b) => b.taskId).filter(Boolean)), [weekBlocks]);
   const blockTitle = (b: PlanBlock) => (b.taskId && taskById.get(b.taskId)?.title) || b.title;
   const blockDone = (b: PlanBlock) => (b.taskId ? taskById.get(b.taskId)?.done ?? !!b.done : !!b.done);
@@ -160,7 +195,7 @@ export default function Planner() {
       setLive(null);
       if (!started) {
         // A press without travel is a click: a block opens its card.
-        if (d.kind === "move" && ev.type === "pointerup") setEditingId(d.block.id);
+        if (d.kind === "move" && ev.type === "pointerup") setEditingId(isAutoBlock(d.block) ? materialize(d.block) : d.block.id);
         return;
       }
       if (ev.type === "pointerup" && last?.target) drop(d, last.target);
@@ -181,7 +216,8 @@ export default function Planner() {
     }
     const { block } = d;
     if (block.date === target.date && block.startMin === target.startMin) return;
-    updatePlanBlock(block.id, { date: target.date, startMin: target.startMin });
+    if (isAutoBlock(block)) materialize(block, { date: target.date, startMin: target.startMin });
+    else updatePlanBlock(block.id, { date: target.date, startMin: target.startMin });
     if (block.taskId && taskById.has(block.taskId) && block.date !== target.date) updateTask(block.taskId, { dueDate: target.date });
   }
 
@@ -202,17 +238,31 @@ export default function Planner() {
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
       setResizing(null);
-      if (current !== block.durationMin) updatePlanBlock(block.id, { durationMin: current });
+      if (current === block.durationMin) return;
+      if (isAutoBlock(block)) materialize(block, { durationMin: current });
+      else updatePlanBlock(block.id, { durationMin: current });
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
   }
 
+  /** Turns a kanban draft into a stored block (with the change that triggered it). Returns its id. */
+  function materialize(block: PlanBlock, patch: Partial<PlanBlock> = {}): string {
+    const { id: _draftId, ...rest } = block;
+    return addPlanBlock({ ...rest, ...patch });
+  }
+
   function removeBlock(block: PlanBlock) {
     deletePlanBlock(block.id);
     setEditingId(null);
-    const run = pushUndo(`Убрано из планера: ${blockTitle(block)}`, () => restorePlanBlock(block));
+    // A task taken off the grid stays off that day — otherwise its kanban draft would pop right back.
+    const key = block.taskId ? `${block.taskId}@${block.date}` : null;
+    if (key) setPlanDismissed(key, true);
+    const run = pushUndo(`Убрано из планера: ${blockTitle(block)}`, () => {
+      restorePlanBlock(block);
+      if (key) setPlanDismissed(key, false);
+    });
     toast(`Убрано: ${blockTitle(block)}`, { actionLabel: "Вернуть", onAction: run });
   }
 
@@ -247,6 +297,17 @@ export default function Planner() {
             {weekOffset !== 0 && (
               <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setWeekOffset(0)}>Эта неделя</Button>
             )}
+            <Button
+              variant={mirrorKanban ? "secondary" : "ghost"}
+              size="sm"
+              className="ml-2 h-7 gap-1.5 text-xs"
+              aria-pressed={mirrorKanban}
+              title="Показывать все задачи недели с канбана — потом расставьте их сами"
+              onClick={() => setMirrorKanban((v) => !v)}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" /> Задачи с канбана
+              {mirrorKanban && autoBlocks.length > 0 && <span className="tabular-nums text-muted-foreground">{autoBlocks.length}</span>}
+            </Button>
             <span className="ml-auto text-xs text-muted-foreground tabular-nums">
               за неделю: {formatDuration(totalMinutes(weekBlocks)) }
             </span>
@@ -298,12 +359,14 @@ export default function Planner() {
                       const done = blockDone(block);
                       const title = blockTitle(block);
                       const tall = duration * PX_PER_MIN >= 44;
+                      const draft = isAutoBlock(block);
                       return (
                         <div
                           key={block.id}
                           role="button"
                           tabIndex={0}
-                          aria-label={`${title}, ${formatRange(block.startMin, duration)}`}
+                          aria-label={`${title}, ${formatRange(block.startMin, duration)}${draft ? ", с канбана" : ""}`}
+                          title={draft ? "С канбана — перетащите или растяните, чтобы закрепить" : undefined}
                           onPointerDown={(e) => beginDrag(e, { kind: "move", block, grabMin: (e.clientY - e.currentTarget.getBoundingClientRect().top) / PX_PER_MIN })}
                           onKeyDown={(e) => { if (e.key === "Enter") setEditingId(block.id); if (e.key === "Delete") removeBlock(block); }}
                           className={cn(
@@ -311,6 +374,8 @@ export default function Planner() {
                             "cursor-grab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
                             PLAN_COLORS[block.color].block,
                             done && "opacity-50",
+                            // A kanban draft: dashed outline until it is moved, stretched or opened.
+                            draft && "outline-dashed outline-1 -outline-offset-1 outline-foreground/30",
                             isMoving && "opacity-30"
                           )}
                           style={{
