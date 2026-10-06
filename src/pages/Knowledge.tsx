@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { BookMarked, ExternalLink, RefreshCw, Search, List, LayoutGrid, Trash2, X, ImageIcon, Link2, FolderTree, CalendarDays, Plus, GripVertical, Library as LibraryIcon } from "lucide-react";
+import { BookMarked, ExternalLink, RefreshCw, Search, List, LayoutGrid, Trash2, X, ImageIcon, Link2, FolderTree, CalendarDays, Plus, GripVertical, Library as LibraryIcon, NotebookPen } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -25,6 +25,7 @@ import { ShimmerSkeleton } from "@/components/unlumen-ui/shimmer-skeleton";
 import { ProgressiveBlur } from "@/components/unlumen-ui/progressive-blur";
 import { extractLinks, linkColor, linkMonogram, faviconUrl, prettyDomain } from "@/lib/links";
 import { LibraryPanel } from "@/components/library/LibraryPanel";
+import { NotesPanel } from "@/components/notes/NotesPanel";
 import { useLibrary } from "@/components/library/useLibrary";
 import { newDraft, detectType, type LibraryDraft } from "@/lib/library";
 import {
@@ -57,7 +58,7 @@ const POLL_MS = 60_000;
 type ViewMode = "cards" | "table";
 type SortMode = "newest" | "oldest" | "title" | "titleDesc" | "image";
 type GroupMode = "date" | "category";
-type KnowledgeTab = "cards" | "library" | "links";
+type KnowledgeTab = "notes" | "cards" | "library" | "links";
 
 function NotConfigured() {
   return (
@@ -170,7 +171,8 @@ export default function Knowledge() {
   // Client-side category ("раздел") overrides per card — one level of hierarchy over flat tags.
   const [categories, setCategories] = useState<CategoryOverrides>(() => loadCategoryOverrides());
   const [categoryDraft, setCategoryDraft] = useState("");
-  // Три раздела: карточки из Telegram, «Библиотека» (свой каталог с заметками), полка ссылок.
+  // Четыре раздела: «Конспекты» (папки и заметки, как в Obsidian), карточки из Telegram,
+  // «Библиотека» (свой каталог с заметками), полка ссылок.
   // Deep links: location.state.tab / openLibraryId (палитра, дашборд) и ?share (Share Target с телефона).
   const location = useLocation();
   const navigate = useNavigate();
@@ -178,7 +180,7 @@ export default function Knowledge() {
   const navState = (location.state ?? {}) as { tab?: KnowledgeTab; openLibraryId?: string };
   // Web Share Target (manifest.webmanifest) lands here as /knowledge?title=&text=&url= .
   const isShare = ["url", "text", "title"].some((k) => searchParams.has(k));
-  const [tab, setTab] = useState<KnowledgeTab>(() => (isShare ? "library" : navState.tab ?? "cards"));
+  const [tab, setTab] = useState<KnowledgeTab>(() => (isShare ? "library" : navState.tab ?? "notes"));
   const lib = useLibrary();
   const [libOpenId, setLibOpenId] = useState<string | null>(navState.openLibraryId ?? null);
   const [pendingDraft, setPendingDraft] = useState<LibraryDraft | null>(() => {
@@ -724,7 +726,7 @@ export default function Knowledge() {
   return (
     <AppShell
       title="База знаний"
-      description="Карточки из Telegram · Библиотека с заметками · полка ссылок"
+      description="Конспекты · карточки из Telegram · Библиотека · полка ссылок"
       actions={
         configured && tab === "cards" ? (
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
@@ -739,13 +741,16 @@ export default function Knowledge() {
         value={tab}
         onChange={setTab}
         options={[
+          { value: "notes", label: <><NotebookPen className="h-3.5 w-3.5" /> Конспекты</> },
           { value: "cards", label: <><BookMarked className="h-3.5 w-3.5" /> Карточки</> },
           { value: "library", label: <><LibraryIcon className="h-3.5 w-3.5" /> Библиотека{lib.items.length > 0 && <span className="ml-1 tabular-nums text-muted-foreground">{lib.items.length}</span>}</> },
           { value: "links", label: <><Link2 className="h-3.5 w-3.5" /> Ссылки</> },
         ]}
       />
 
-      {tab === "library" ? (
+      {tab === "notes" ? (
+        <NotesPanel />
+      ) : tab === "library" ? (
         <LibraryPanel
           lib={lib}
           openId={libOpenId}
