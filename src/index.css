@@ -205,6 +205,8 @@ h1, .text-2xl { line-height: 1.15; }
 .note-prose h3 { font-size: 1.1rem; font-weight: 600; line-height: 1.35; margin-top: 1.1em; }
 .note-prose > :first-child { margin-top: 0; }
 .note-prose strong { font-weight: 650; }
+.note-prose img { max-width: 100%; height: auto; border-radius: 0.5rem; }
+.note-prose img.ProseMirror-selectednode { outline: 2px solid hsl(var(--brand)); }
 .note-prose a { color: hsl(var(--brand)); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .note-prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

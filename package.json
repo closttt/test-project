@@ -24,6 +24,7 @@
     "@radix-ui/react-slot": "^1.1.0",
     "@supabase/supabase-js": "^2.110.3",
     "@tiptap/core": "^3.31.4",
+    "@tiptap/extension-image": "^3.31.4",
     "@tiptap/extension-list": "^3.31.4",
     "@tiptap/extensions": "^3.31.4",
     "@tiptap/markdown": "^3.31.4",

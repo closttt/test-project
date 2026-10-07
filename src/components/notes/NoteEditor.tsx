@@ -4,6 +4,7 @@ import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import { Placeholder } from "@tiptap/extensions";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
+import Image from "@tiptap/extension-image";
 import { Markdown } from "@tiptap/markdown";
 import {
   Bold,
@@ -33,15 +34,20 @@ import { cn } from "@/lib/utils";
  * «```» a code block — and it formats in place. In and out it is plain markdown, so what is
  * stored stays readable anywhere.
  *
+ * Links to other notes (`#note-<id>`, what Obsidian's [[wikilinks]] import as) open that note on
+ * click; ordinary links open in a new tab on Ctrl/⌘-click, so a plain click still edits them.
+ *
  * Mount it with `key={note.id}`: the initial content is read once, switching notes remounts.
  */
 export function NoteEditor({
   initial,
   onChange,
+  onOpenNote,
   autoFocus,
 }: {
   initial: string;
   onChange: (markdown: string) => void;
+  onOpenNote?: (id: string) => void;
   autoFocus?: boolean;
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
@@ -53,6 +59,7 @@ export function NoteEditor({
       }),
       TaskList,
       TaskItem.configure({ nested: true }),
+      Image,
       Placeholder.configure({
         placeholder: ({ node }) =>
           node.type.name === "heading" ? "Заголовок" : "Пишите… «# » — заголовок, «- » — список, «[ ] » — чекбокс",
@@ -62,7 +69,23 @@ export function NoteEditor({
     content: initial,
     contentType: "markdown",
     autofocus: autoFocus ? "end" : false,
-    editorProps: { attributes: { class: "note-prose", spellcheck: "true" } },
+    editorProps: {
+      attributes: { class: "note-prose", spellcheck: "true" },
+      handleClick: (_view, _pos, event) => {
+        const href = (event.target as HTMLElement).closest("a")?.getAttribute("href");
+        if (!href) return false;
+        const note = href.match(/^#note-(.+)$/);
+        if (note) {
+          onOpenNote?.(note[1]);
+          return true;
+        }
+        if (event.ctrlKey || event.metaKey) {
+          window.open(href, "_blank", "noopener");
+          return true;
+        }
+        return false;
+      },
+    },
     onUpdate: ({ editor: e }) => onChange(e.getMarkdown()),
   });
 

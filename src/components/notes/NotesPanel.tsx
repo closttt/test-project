@@ -490,6 +490,7 @@ export function NotesPanel() {
             key={open.id}
             initial={open.content}
             onChange={(content) => notes.update(open.id, { content })}
+            onOpenNote={select}
           />
         </div>
       </div>
