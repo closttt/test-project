@@ -156,9 +156,13 @@ function AddPayment({ payers, pick, onAdd }: { payers: Payer[]; pick: string; on
 
 const TWO_COL = "grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]";
 
-function Ledger({ all, rows, pending, paid, query, words, api }: { all: Payer[]; rows: Payer[]; pending: LedgerPay[]; paid: LedgerPay[]; query: string; words: (typeof WORDS)[Tab]; api: LedgerApi }) {
+function Ledger({ all, rows, pending, paid, query, words, api, monthReceipts }: { all: Payer[]; rows: Payer[]; pending: LedgerPay[]; paid: LedgerPay[]; query: string; words: (typeof WORDS)[Tab]; api: LedgerApi; monthReceipts?: boolean }) {
   const [showPaid, setShowPaid] = useState(false);
-  const paidShown = showPaid ? paid : paid.slice(0, 3);
+  // Students: the receipts block is this month's operations in full — no «Все N» cap.
+  const month = todayStr().slice(0, 7);
+  const monthLabel = new Date(`${month}-01T00:00:00`).toLocaleDateString("ru-RU", { month: "long" });
+  const paidMonth = useMemo(() => paid.filter((r) => r.p.date.slice(0, 7) === month), [paid, month]);
+  const paidShown = monthReceipts ? paidMonth : showPaid ? paid : paid.slice(0, 3);
 
   const t = useMemo(() => moneyOf(all.flatMap((p) => p.payments)), [all]);
   const rev = useMemo(() => revenueBuckets(all.flatMap((p) => p.payments), 12), [all]);
@@ -269,7 +273,28 @@ function Ledger({ all, rows, pending, paid, query, words, api }: { all: Payer[];
           ) : (
             <div className="h-6" />
           )}
-          {paid.length > 0 && (
+          {monthReceipts ? (
+            <div data-lab-block="receipts">
+              <div className="flex items-center justify-between gap-4 px-6 pb-2 pt-1">
+                <span style={{ ...T.body, fontWeight: 500 }}>Поступления за {monthLabel}</span>
+                <span style={{ ...T.body, ...T.num, fontWeight: 400, color: C.text3 }}>
+                  {paidMonth.length} · {paidMonth.reduce((s, r) => s + r.p.amount, 0).toLocaleString("ru-RU")} ₽
+                </span>
+              </div>
+              <div style={{ backgroundImage: dashed.backgroundImage, backgroundSize: dashed.backgroundSize, backgroundRepeat: "repeat-x", backgroundPosition: "left top" }}>
+                {paidMonth.length === 0 ? (
+                  <div className="px-6 py-4" style={{ ...T.body, color: C.text3 }}>
+                    В этом месяце поступлений пока нет
+                  </div>
+                ) : (
+                  paidShown.map((r) => (
+                    <PayLine key={r.p.id} r={r} onOpen={() => api.open(r.payer.id)} onToggle={() => api.update(r.payer.id, r.p.id, { status: "pending" })} onDelete={() => api.remove(r.payer.id, r.p.id)} />
+                  ))
+                )}
+              </div>
+              <div className="h-3" />
+            </div>
+          ) : paid.length > 0 && (
             <div data-lab-block="receipts">
               <div className="flex items-center justify-between gap-4 px-6 pb-2 pt-1">
                 <span style={{ ...T.body, fontWeight: 500 }}>Последние поступления</span>
@@ -425,7 +450,7 @@ export default function ClientsCash() {
         </Btn>
       }
     >
-      <Ledger key={tab} all={view.all} rows={view.rows} pending={pending} paid={paid} query={query} words={w} api={api} />
+      <Ledger key={tab} all={view.all} rows={view.rows} pending={pending} paid={paid} query={query} words={w} api={api} monthReceipts={tab === "students"} />
       {d.dialogs}
       {sd.dialogs}
     </CraftShell>

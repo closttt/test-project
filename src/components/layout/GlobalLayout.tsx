@@ -15,18 +15,20 @@ import { useGlobalShortcuts } from "@/components/layout/useGlobalShortcuts";
 /**
  * Everything that must stay mounted on every page, whatever chrome the page draws itself:
  * reminders/meeting alerts, calendar + meeting sync, gamification, the global dialogs and
- * shortcuts. The Craft Dark screens bring their own sidebar; the few legacy pages (Архив,
- * Story) nest inside AppLayout for theirs.
+ * shortcuts. The Craft Dark screens bring their own sidebar; the legacy Архив page nests
+ * inside AppLayout for its own.
  */
 export function GlobalLayout() {
   // Quick-add opened while looking at a project should file into that project by default.
   const projectMatch = useMatch("/projects/:id");
+  // Full-screen focus mode stays distraction-free: no floating dock there.
+  const focus = useMatch("/focus");
   useGlobalShortcuts();
 
   return (
     <>
       <Outlet />
-      <BottomDock />
+      {!focus && <BottomDock />}
       <CommandPalette />
       <QuickAddDialog defaultProjectId={projectMatch?.params.id} />
       <QuickNoteDialog />

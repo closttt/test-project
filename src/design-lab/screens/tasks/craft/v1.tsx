@@ -55,7 +55,6 @@ import {
 } from "./_parts";
 
 const GROUP_CAP = 8;
-const DAY_CAP = 4;
 const BACKLOG_CAP = 8;
 const KANBAN_CAP = 8;
 const DOT: Record<string, string> = { overdue: C.amber, today: C.accent, tomorrow: C.accent };
@@ -414,15 +413,15 @@ function DayColumn({
   now: number;
   onMeetingToggle: (id: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: d.date }));
-  const shown = expanded ? items : items.slice(0, DAY_CAP);
+  // Every task of the day is shown — no «Ещё N» (owner, 2026-10-12).
+  const shown = items;
   const accent = d.isToday ? "#5AA9FF" : undefined;
   return (
     <div
       {...props}
       className="flex min-w-0 snap-start flex-col gap-2 p-2 transition-colors duration-150"
-      style={{ minHeight: 280, borderRadius: R.inner, background: over ? DROP_BG : d.isToday ? "rgba(10,132,255,0.05)" : COL_BG }}
+      style={{ minHeight: 280, borderRadius: R.inner, background: over ? DROP_BG : COL_BG }}
     >
       <div className="flex items-start justify-between gap-2 px-2 pb-1 pt-2">
         <div className="min-w-0">
@@ -441,7 +440,6 @@ function DayColumn({
       {shown.map((t, i) => (
         <TaskCard key={t.id} t={t} m={m} onOpen={() => onOpen(t)} mark={markFirst && i === 0} />
       ))}
-      {items.length > DAY_CAP && <MoreBtn expanded={expanded} hidden={items.length - shown.length} onClick={() => setExpanded((x) => !x)} />}
       <div className="mt-auto flex flex-col gap-1">
         <DayAdd onAdd={(v) => m.actions.add(v, { dueDate: d.date, projectId: pid ?? undefined })} />
         <DoneList items={done} m={m} open={doneOpen} onToggle={onDoneToggle} onOpen={onOpen} />

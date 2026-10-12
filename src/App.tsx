@@ -20,7 +20,7 @@ const Analytics = lazy(() => import("@/design-lab/screens/analytics/craft/v5"));
 const Knowledge = lazy(() => import("@/design-lab/screens/knowledge/craft/v5"));
 const SettingsPage = lazy(() => import("@/design-lab/screens/settings/craft/v1"));
 const Achievements = lazy(() => import("@/design-lab/screens/achievements/craft/v1"));
-const FocusPage = lazy(() => import("@/pages/FocusPage"));
+const FocusPage = lazy(() => import("@/design-lab/screens/focus/craft/v1"));
 const Changelog = lazy(() => import("@/design-lab/screens/changelog/craft/v1"));
 const Archive = lazy(() => import("@/pages/Archive"));
 
@@ -32,9 +32,10 @@ export default function App() {
   return (
     <Suspense fallback={<PageFallback />}>
       <Routes>
-        {/* Focus mode is full-screen — outside the app shell chrome. */}
-        <Route path="/focus" element={<FocusPage />} />
         <Route element={<GlobalLayout />}>
+          {/* Focus mode is full-screen (no sidebar, no dock) but keeps the global engines, so
+              meeting alerts still ring while focusing. */}
+          <Route path="/focus" element={<FocusPage />} />
           <Route path="/" element={<Dashboard />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/projects" element={<Projects />} />
