@@ -422,7 +422,7 @@ function DayColumn({
     <div
       {...props}
       className="flex min-w-0 snap-start flex-col gap-2 p-2 transition-colors duration-150"
-      style={{ minHeight: 280, borderRadius: R.inner, background: over ? DROP_BG : d.isToday ? "rgba(10,132,255,0.08)" : COL_BG }}
+      style={{ minHeight: 280, borderRadius: R.inner, background: over ? DROP_BG : d.isToday ? "rgba(10,132,255,0.05)" : COL_BG }}
     >
       <div className="flex items-start justify-between gap-2 px-2 pb-1 pt-2">
         <div className="min-w-0">
