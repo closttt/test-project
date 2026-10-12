@@ -698,18 +698,18 @@ function MeetingsTile({ m }: { m: DashboardModel }) {
     url: mt.url,
     done: mt.done,
   }));
-  const demo = real.length === 0;
-  const list = demo ? demoMeetings(now) : real;
+  // No sample meetings in the live app: an empty day just says so in the subtitle.
+  const list = real;
   return (
     <Tile area="meet">
       <TileHead
         icon={<CalendarClock size={18} strokeWidth={1.75} />}
         title="Встречи"
-        sub={`${list.length} ${plural(list.length, "встреча", "встречи", "встреч")} впереди`}
+        sub={list.length ? `${list.length} ${plural(list.length, "встреча", "встречи", "встреч")} впереди` : "Встреч впереди нет"}
       />
       <div className="mt-4 flex flex-col gap-2">
         {list.map((mt) => (
-          <MeetingCard key={mt.id} mt={mt} now={now} onToggle={demo ? undefined : () => m.actions.toggleMeeting(mt.id)} />
+          <MeetingCard key={mt.id} mt={mt} now={now} onToggle={() => m.actions.toggleMeeting(mt.id)} />
         ))}
       </div>
     </Tile>

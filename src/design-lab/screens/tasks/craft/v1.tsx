@@ -18,8 +18,8 @@
  *   │ └───────────────────────────────────────────────────────────────────────┘ │
  *   └──────────────────────────────────────────────────────────────────────────┘
  */
-import { useCallback, useMemo, useState } from "react";
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleCheckBig, FolderKanban, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleCheckBig, FolderKanban, Plus, Trash2, Video } from "lucide-react";
 
 import { Btn, C, Empty, IconBtn, R, Ring, T, TONE, dashed, plural } from "@/design-lab/screens/_kit/craft";
 import { Select, TagChips, metaChip } from "@/design-lab/screens/_kit/controls";
@@ -27,7 +27,9 @@ import { CraftShell } from "@/design-lab/screens/_kit/craftShell";
 import { addDays, formatDate, localDayStr, todayStr } from "@/lib/format";
 import { groupByTime } from "@/lib/taskGrouping";
 import { BACKLOG_KEY, weekColumnOf, weekDays, weekRangeLabel } from "@/lib/weekBoard";
-import type { Priority, Task } from "@/types";
+import { meetingStart } from "@/lib/meetingAlerts";
+import { useData } from "@/store/DataProvider";
+import type { Meeting, Priority, Task } from "@/types";
 import {
   DatePop,
   LISTS,
@@ -315,6 +317,74 @@ function MoreBtn({ expanded, hidden, onClick }: { expanded: boolean; hidden: num
   );
 }
 
+// ── Meetings on the week — calendar calls stand on their day above the tasks ─────────────────
+
+const MIN = 60 * 1000;
+const hhmm = (t: number) => new Date(t).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+
+/** Re-render every 30s so «идёт» / «через 12 мин» stay true while the board is open. */
+function useNow(ms = 30_000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+  return now;
+}
+
+/**
+ * A meeting on its day: time range, title, live state and the call link. Meetings come from the
+ * same store as the dashboard (Google Calendar sync + ones added by hand); the round check closes
+ * it like a task (toggleMeeting), the button opens the call.
+ */
+function MeetingCard({ mt, now, onToggle }: { mt: Meeting; now: number; onToggle: () => void }) {
+  const start = meetingStart(mt);
+  const end = start + (mt.durationMin || 30) * MIN;
+  const live = !mt.done && now >= start && now < end;
+  const soon = !mt.done && !live && start > now && start - now <= 15 * MIN;
+  const past = mt.done || now >= end;
+  return (
+    <div
+      className="flex flex-col gap-2 p-3"
+      style={{
+        borderRadius: R.small,
+        background: live ? "rgba(10,132,255,0.14)" : C.raise,
+        opacity: past && !live ? 0.55 : 1,
+      }}
+    >
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 shrink-0" title={mt.done ? "Вернуть встречу" : "Закрыть встречу"}>
+          <RoundCheckBtn size={18} done={!!mt.done} onChange={onToggle} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5" style={{ fontSize: 13, color: live ? "#5AA9FF" : C.text2 }}>
+            <Video size={13} strokeWidth={1.75} className="shrink-0" />
+            <span style={T.num}>
+              {mt.time ? `${hhmm(start)}–${hhmm(end)}` : "весь день"}
+            </span>
+            {live && <span>· идёт</span>}
+            {soon && <span style={{ color: C.amber }}>· через {Math.max(1, Math.ceil((start - now) / MIN))} мин</span>}
+          </div>
+          <div className="mt-1" style={{ fontSize: 15, lineHeight: 1.35, color: C.text, textDecoration: mt.done ? "line-through" : undefined }}>
+            {mt.title}
+          </div>
+        </div>
+      </div>
+      {mt.url && !past && (
+        <a
+          href={mt.url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center justify-center gap-1.5 transition-[filter] hover:brightness-110"
+          style={{ height: 32, borderRadius: 999, fontSize: 13, background: live || soon ? C.accent : "rgba(10,132,255,0.14)", color: live || soon ? "#fff" : "#5AA9FF" }}
+        >
+          <Video size={14} strokeWidth={1.75} /> Подключиться
+        </a>
+      )}
+    </div>
+  );
+}
+
 // ── Week board — the app's «По неделям» in Craft Dark, with the backlog ───────────────────────
 
 function DayColumn({
@@ -327,6 +397,9 @@ function DayColumn({
   done,
   doneOpen,
   onDoneToggle,
+  meetings,
+  now,
+  onMeetingToggle,
 }: {
   d: { date: string; label: string; short: string; isToday: boolean };
   items: Task[];
@@ -337,6 +410,9 @@ function DayColumn({
   done: Task[];
   doneOpen: boolean;
   onDoneToggle: () => void;
+  meetings: Meeting[];
+  now: number;
+  onMeetingToggle: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: d.date }));
@@ -359,6 +435,9 @@ function DayColumn({
         </div>
         {items.length > 0 && <span style={{ ...T.body, ...T.num, fontWeight: 400, color: accent ?? C.text3 }}>{items.length}</span>}
       </div>
+      {meetings.map((mt) => (
+        <MeetingCard key={mt.id} mt={mt} now={now} onToggle={() => onMeetingToggle(mt.id)} />
+      ))}
       {shown.map((t, i) => (
         <TaskCard key={t.id} t={t} m={m} onOpen={() => onOpen(t)} mark={markFirst && i === 0} />
       ))}
@@ -420,6 +499,12 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
     saveDoneOpen(next);
   };
   const firstCol = cols.findIndex((c) => c.items.length > 0);
+  // Meetings by day (calendar sync + manual), earliest first. Hidden while a project filter is on —
+  // meetings don't belong to projects.
+  const { meetings, toggleMeeting } = useData();
+  const now = useNow();
+  const meetingsBy = (date: string) =>
+    pid ? [] : meetings.filter((mt) => mt.date === date && (!query || mt.title.toLowerCase().includes(query.toLowerCase()))).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
   return (
     <section data-lab-block="week" className="mt-4 flex min-w-0 flex-col gap-4 p-4 sm:p-6" style={{ background: C.card, borderRadius: R.card }}>
@@ -464,6 +549,9 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
               done={doneBy(d.date)}
               doneOpen={doneOpen}
               onDoneToggle={toggleDone}
+              meetings={meetingsBy(d.date)}
+              now={now}
+              onMeetingToggle={toggleMeeting}
             />
           ))}
         </div>
