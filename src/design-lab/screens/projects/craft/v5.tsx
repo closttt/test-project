@@ -50,7 +50,7 @@ function ListRow({ r, on, onPick }: { r: ProjectRow; on: boolean; onPick: () => 
       tabIndex={0}
       onClick={onPick}
       onKeyDown={(e) => e.key === "Enter" && onPick()}
-      className={`group flex cursor-pointer items-center gap-3 px-3 outline-none transition-colors duration-150 ${on ? "" : "hover:bg-[#1C1C20] focus-visible:bg-[#1C1C20]"}`}
+      className={`group flex cursor-pointer items-center gap-3 px-3 outline-none transition-colors duration-150 ${on ? "" : "hover:bg-[#17171A] focus-visible:bg-[#17171A]"}`}
       style={{ minHeight: 64, borderRadius: R.inner, background: on ? SOFT : undefined }}
     >
       <ProjectMark p={r.project} size={36} />

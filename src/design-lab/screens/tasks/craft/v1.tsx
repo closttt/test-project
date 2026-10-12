@@ -22,6 +22,7 @@ import { useCallback, useMemo, useState } from "react";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleCheckBig, FolderKanban, Plus, Trash2 } from "lucide-react";
 
 import { Btn, C, Empty, IconBtn, R, Ring, T, TONE, dashed, plural } from "@/design-lab/screens/_kit/craft";
+import { Select, TagChips, metaChip } from "@/design-lab/screens/_kit/controls";
 import { CraftShell } from "@/design-lab/screens/_kit/craftShell";
 import { addDays, formatDate, localDayStr, todayStr } from "@/lib/format";
 import { groupByTime } from "@/lib/taskGrouping";
@@ -35,10 +36,14 @@ import {
   PRIO_DOT,
   PRIO_LABEL,
   PRIO_RANK,
+  PrioChip,
+  ProjectChip,
   QuickAdd,
   RoundCheckBtn,
+  SubCount,
   TaskEditor,
   TaskLine,
+  TimeMeta,
   dueText,
   tint,
   useTasksModel,
@@ -95,7 +100,6 @@ interface Group {
 }
 
 const DRAG = "text/plain";
-const SHORT: Record<string, string> = { Понедельник: "Пн", Вторник: "Вт", Среда: "Ср", Четверг: "Чт", Пятница: "Пт", Суббота: "Сб", Воскресенье: "Вс" };
 const byPrio = (a: Task, b: Task) =>
   Number(a.done) - Number(b.done) || PRIO_RANK[a.priority] - PRIO_RANK[b.priority] || (a.dueDate ?? "￿").localeCompare(b.dueDate ?? "￿");
 
@@ -126,50 +130,63 @@ function useDrop(onDrop: (id: string) => void) {
 // ── Card — week days, backlog, kanban ─────────────────────────────────────────────────────────
 
 /**
- * A task card: title up to three lines; below — check, priority dot, project (or the overdue date),
- * and a date chip on the right that opens the date picker in place. Click anywhere else opens the
- * editor; hover shows a trash icon; the card drags onto another column.
- * `showDate` prints the due date in the chip (kanban); in day columns the column already says it.
+ * The task card — the old production card's structure (check + title up to three lines; a wrapping
+ * meta line under the title: priority, project, tags, subtasks, time … due date on the right) in
+ * Craft Dark: raised fill, radius 12, 12 padding, tinted chips (priority in its hue, project muted
+ * with the folder glyph, tags violet). Click opens the editor; hover shows the trash; the date chip picks a date in place; the
+ * card drags onto another column. `showDate` prints the due date (kanban); in a day column the
+ * column already says it, so only an overdue date shows. `compact` = the done list under a day.
  */
-function TaskCard({ t, m, onOpen, mark, showDate }: { t: Task; m: TasksModel; onOpen: () => void; mark?: boolean; showDate?: boolean }) {
+function TaskCard({ t, m, onOpen, mark, showDate, compact }: { t: Task; m: TasksModel; onOpen: () => void; mark?: boolean; showDate?: boolean; compact?: boolean }) {
   const { text, late } = dueText(t);
   const pname = t.projectId ? m.projectName.get(t.projectId) : undefined;
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const closePop = useCallback(() => setAnchor(null), []);
-  const chipText = late || (showDate && t.dueDate) ? text : "";
+  const chipText = !t.done && (late || (showDate && t.dueDate)) ? text : "";
   return (
     <article
       data-lab-block={mark ? "card" : undefined}
       role="button"
       tabIndex={0}
-      draggable
+      draggable={!compact}
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAG, t.id);
         e.dataTransfer.effectAllowed = "move";
       }}
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen()}
-      className="group relative flex cursor-pointer flex-col gap-2 p-2.5 outline-none transition-colors duration-150 hover:bg-[#26262C] focus-visible:bg-[#26262C] active:cursor-grabbing"
-      style={{ background: C.raise, borderRadius: R.small }}
+      className="group relative flex cursor-pointer flex-col gap-2 outline-none transition-colors duration-150 hover:bg-[#202025] focus-visible:bg-[#202025] active:cursor-grabbing"
+      style={{
+        padding: compact ? "8px 10px" : 12,
+        background: compact ? "transparent" : C.raise,
+        borderRadius: R.small,
+        opacity: compact ? 0.7 : 1,
+      }}
     >
-      <span
-        lang="ru"
-        className="pr-5"
-        style={{
-          fontSize: 13,
-          lineHeight: 1.35,
-          color: t.done ? C.text3 : C.text,
-          textDecorationLine: t.done ? "line-through" : "none",
-          display: "-webkit-box",
-          WebkitLineClamp: 3,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-          overflowWrap: "break-word",
-          hyphens: "auto",
-        }}
-      >
-        {t.title}
-      </span>
+      <div className="flex min-w-0 items-start gap-2.5">
+        <span className="pt-px">
+          <RoundCheckBtn size={compact ? 16 : 18} done={t.done} onChange={() => m.actions.toggle(t)} />
+        </span>
+        <span
+          lang="ru"
+          className="min-w-0 flex-1 pr-6"
+          style={{
+            fontSize: compact ? 13 : 15,
+            lineHeight: compact ? 1.35 : 1.4,
+            color: t.done ? C.text3 : C.text,
+            textDecorationLine: t.done ? "line-through" : "none",
+            textDecorationColor: C.text3,
+            display: "-webkit-box",
+            WebkitLineClamp: compact ? 1 : 3,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            overflowWrap: "break-word",
+            hyphens: "auto",
+          }}
+        >
+          {t.title}
+        </span>
+      </div>
       <button
         type="button"
         title="Удалить задачу"
@@ -179,34 +196,42 @@ function TaskCard({ t, m, onOpen, mark, showDate }: { t: Task; m: TasksModel; on
           m.actions.remove(t);
         }}
         onKeyDown={(e) => e.stopPropagation()}
-        className="absolute grid place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF7A73] focus-visible:opacity-100 group-hover:opacity-100"
-        style={{ top: 6, right: 6, width: 24, height: 24, color: C.text3 }}
+        className="absolute grid place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF6B63] focus-visible:opacity-100 group-hover:opacity-100"
+        style={{ top: compact ? 4 : 8, right: compact ? 4 : 8, width: 26, height: 26, color: C.text3 }}
       >
-        <Trash2 size={13} strokeWidth={1.75} />
+        <Trash2 size={14} strokeWidth={1.75} />
       </button>
-      <div className="flex min-w-0 items-center gap-2" style={{ fontSize: 11, lineHeight: 1.3 }}>
-        <RoundCheckBtn size={16} done={t.done} onChange={() => m.actions.toggle(t)} />
-        {t.priority > 0 && <span className="shrink-0" style={{ width: 5, height: 5, borderRadius: 9, background: PRIO_DOT[t.priority] }} />}
-        <span className="min-w-0 flex-1 truncate" style={{ color: C.text3 }}>
-          {pname ?? (t.priority && !chipText ? PRIO_LABEL[t.priority] : "")}
-        </span>
-        <button
-          type="button"
-          title="Срок"
-          aria-label={t.dueDate ? `Срок: ${text}. Изменить` : "Назначить срок"}
-          onClick={(e) => {
-            e.stopPropagation();
-            setAnchor((a) => (a ? null : e.currentTarget));
-          }}
-          onKeyDown={(e) => e.stopPropagation()}
-          className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full transition-[opacity,background,color] duration-150 hover:bg-[#2E2E34] hover:text-[#F4F5F7] focus-visible:opacity-100 ${
-            chipText || anchor ? "" : "opacity-0 group-hover:opacity-100"
-          }`}
-          style={{ height: 22, padding: chipText ? "0 6px" : 0, width: chipText ? undefined : 22, justifyContent: "center", color: late ? TONE.amber.fg : C.text3 }}
-        >
-          {chipText || <CalendarDays size={13} strokeWidth={1.75} />}
-        </button>
-      </div>
+      {!compact && (
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5" style={{ paddingLeft: 28 }}>
+          <PrioChip p={t.priority} />
+          {pname && t.projectId && <ProjectChip id={t.projectId} name={pname} on="raise" />}
+          <TagChips tags={t.tags} />
+          <SubCount t={t} />
+          <TimeMeta t={t} />
+          <button
+            type="button"
+            title="Срок"
+            aria-label={t.dueDate ? `Срок: ${text}. Изменить` : "Назначить срок"}
+            onClick={(e) => {
+              e.stopPropagation();
+              setAnchor((a) => (a ? null : e.currentTarget));
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+            className={`ml-auto inline-flex shrink-0 items-center justify-center gap-1 transition-[opacity,background,color] duration-150 hover:brightness-125 focus-visible:opacity-100 ${
+              chipText || anchor ? "" : "opacity-0 group-hover:opacity-100"
+            }`}
+            style={{
+              ...metaChip,
+              padding: chipText ? "0 8px" : 0,
+              width: chipText ? undefined : 22,
+              background: late ? TONE.amber.bg : chipText ? C.line2 : "transparent",
+              color: late ? TONE.amber.fg : C.text2,
+            }}
+          >
+            {chipText || <CalendarDays size={14} strokeWidth={1.75} />}
+          </button>
+        </div>
+      )}
       {anchor && (
         <DatePop
           anchor={anchor}
@@ -220,6 +245,43 @@ function TaskCard({ t, m, onOpen, mark, showDate }: { t: Task; m: TasksModel; on
   );
 }
 
+/** «Завершено · N» under a day — collapsed by default; the open/closed state is remembered per board. */
+const DONE_KEY = "crm-tasks-craft-week-done-v1";
+function loadDoneOpen(): boolean {
+  try {
+    return localStorage.getItem(DONE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function saveDoneOpen(v: boolean) {
+  try {
+    localStorage.setItem(DONE_KEY, v ? "1" : "0");
+  } catch {
+    /* storage unavailable — the toggle still works for this visit */
+  }
+}
+
+function DoneList({ items, m, open, onToggle, onOpen }: { items: Task[]; m: TasksModel; open: boolean; onToggle: () => void; onOpen: (t: Task) => void }) {
+  if (!items.length) return null;
+  return (
+    <div className="flex flex-col gap-0.5 pt-1" style={{ ...dashed, backgroundPosition: "left top" }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 px-2.5 text-left transition-colors hover:text-[#F4F5F7]"
+        style={{ height: 34, fontSize: 13, color: C.text3 }}
+      >
+        <ChevronDown size={14} strokeWidth={1.75} style={{ transform: open ? undefined : "rotate(-90deg)", transition: "transform .15s" }} />
+        Завершено
+        <span style={{ ...T.num, fontWeight: 400 }}>· {items.length}</span>
+      </button>
+      {open && items.map((t) => <TaskCard key={t.id} t={t} m={m} onOpen={() => onOpen(t)} compact />)}
+    </div>
+  );
+}
+
 function DayAdd({ onAdd, placeholder = "Задача" }: { onAdd: (v: string) => void; placeholder?: string }) {
   const [v, setV] = useState("");
   return (
@@ -230,16 +292,16 @@ function DayAdd({ onAdd, placeholder = "Задача" }: { onAdd: (v: string) =>
         onAdd(v);
         setV("");
       }}
-      className="flex items-center gap-1.5 px-2"
-      style={{ height: 34, borderRadius: R.small }}
+      className="flex items-center gap-2 px-2.5"
+      style={{ height: 40, borderRadius: R.small }}
     >
-      <Plus size={14} strokeWidth={1.75} color={C.text3} className="shrink-0" />
+      <Plus size={16} strokeWidth={1.75} color={C.text3} className="shrink-0" />
       <input
         value={v}
         onChange={(e) => setV(e.target.value)}
         placeholder={placeholder}
         className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[#5E6068]"
-        style={{ fontSize: 13, color: C.text }}
+        style={{ fontSize: 14, color: C.text }}
       />
     </form>
   );
@@ -247,7 +309,7 @@ function DayAdd({ onAdd, placeholder = "Задача" }: { onAdd: (v: string) =>
 
 function MoreBtn({ expanded, hidden, onClick }: { expanded: boolean; hidden: number; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="px-2 text-left transition-colors hover:text-[#F4F5F7]" style={{ height: 28, fontSize: 12, color: C.text2 }}>
+    <button type="button" onClick={onClick} className="px-2.5 text-left transition-colors hover:text-[#F4F5F7]" style={{ height: 32, fontSize: 13, color: C.text2 }}>
       {expanded ? "Свернуть" : `Ещё ${hidden}`}
     </button>
   );
@@ -262,6 +324,9 @@ function DayColumn({
   pid,
   onOpen,
   markFirst,
+  done,
+  doneOpen,
+  onDoneToggle,
 }: {
   d: { date: string; label: string; short: string; isToday: boolean };
   items: Task[];
@@ -269,6 +334,9 @@ function DayColumn({
   pid: string | null | undefined;
   onOpen: (t: Task) => void;
   markFirst: boolean;
+  done: Task[];
+  doneOpen: boolean;
+  onDoneToggle: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: d.date }));
@@ -277,22 +345,27 @@ function DayColumn({
   return (
     <div
       {...props}
-      className="flex min-w-0 flex-col gap-1.5 p-1.5 transition-colors duration-150"
-      style={{ minHeight: 200, borderRadius: R.inner, background: over ? DROP_BG : d.isToday ? "rgba(10,132,255,0.08)" : COL_BG }}
+      className="flex min-w-0 snap-start flex-col gap-2 p-2 transition-colors duration-150"
+      style={{ minHeight: 280, borderRadius: R.inner, background: over ? DROP_BG : d.isToday ? "rgba(10,132,255,0.08)" : COL_BG }}
     >
-      <div className="flex items-center justify-between gap-1 px-1.5 pb-1 pt-1.5" style={{ minHeight: 30 }}>
-        <div className="min-w-0 truncate" style={{ ...T.body, fontWeight: 500, color: accent ?? C.text }}>
-          {SHORT[d.label] ?? d.label}
-          <span style={{ fontWeight: 400, color: accent ?? C.text3 }}> · {d.isToday ? "сегодня" : d.short}</span>
+      <div className="flex items-start justify-between gap-2 px-2 pb-1 pt-2">
+        <div className="min-w-0">
+          <div className="truncate" style={{ fontSize: 15, lineHeight: 1.3, fontWeight: 500, color: accent ?? C.text }}>
+            {d.label}
+          </div>
+          <div className="mt-0.5 truncate" style={{ fontSize: 13, lineHeight: 1.3, color: accent ?? C.text3 }}>
+            {d.isToday ? `сегодня · ${d.short}` : d.short}
+          </div>
         </div>
-        {items.length > 0 && <span style={{ ...T.foot, ...T.num, fontWeight: 400, color: accent ?? C.text3 }}>{items.length}</span>}
+        {items.length > 0 && <span style={{ ...T.body, ...T.num, fontWeight: 400, color: accent ?? C.text3 }}>{items.length}</span>}
       </div>
       {shown.map((t, i) => (
         <TaskCard key={t.id} t={t} m={m} onOpen={() => onOpen(t)} mark={markFirst && i === 0} />
       ))}
       {items.length > DAY_CAP && <MoreBtn expanded={expanded} hidden={items.length - shown.length} onClick={() => setExpanded((x) => !x)} />}
-      <div className="mt-auto">
+      <div className="mt-auto flex flex-col gap-1">
         <DayAdd onAdd={(v) => m.actions.add(v, { dueDate: d.date, projectId: pid ?? undefined })} />
+        <DoneList items={done} m={m} open={doneOpen} onToggle={onDoneToggle} onOpen={onOpen} />
       </div>
     </div>
   );
@@ -306,17 +379,17 @@ function Backlog({ items, m, pid, onOpen }: { items: Task[]; m: TasksModel; pid:
     <div
       {...props}
       data-lab-block="backlog"
-      className="flex min-w-0 flex-col gap-1.5 p-1.5 transition-colors duration-150"
+      className="flex min-w-0 flex-col gap-2 p-2 transition-colors duration-150"
       style={{ borderRadius: R.inner, background: over ? DROP_BG : COL_BG }}
     >
-      <div className="flex items-center justify-between gap-2 px-1.5 pb-1 pt-1.5" style={{ minHeight: 30 }}>
-        <div className="truncate" style={{ ...T.body, fontWeight: 500, color: C.text }}>
+      <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-2" style={{ minHeight: 32 }}>
+        <div className="truncate" style={{ fontSize: 15, lineHeight: 1.3, fontWeight: 500, color: C.text }}>
           Бэклог<span style={{ fontWeight: 400, color: C.text3 }}> · без срока</span>
         </div>
-        {items.length > 0 && <span style={{ ...T.foot, ...T.num, fontWeight: 400, color: C.text3 }}>{items.length}</span>}
+        {items.length > 0 && <span style={{ ...T.body, ...T.num, fontWeight: 400, color: C.text3 }}>{items.length}</span>}
       </div>
       {shown.length > 0 && (
-        <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
+        <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 216px), 1fr))" }}>
           {shown.map((t) => (
             <TaskCard key={t.id} t={t} m={m} onOpen={() => onOpen(t)} />
           ))}
@@ -335,10 +408,21 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
   const cols = days.map((d) => ({ d, items: m.freshFirst(pool.filter((t) => weekColumnOf(t, days) === d.date).sort(byPrio)) }));
   const backlog = m.freshFirst(pool.filter((t) => weekColumnOf(t, days) === BACKLOG_KEY).sort(byPrio));
   const inWeek = cols.reduce((s, c) => s + c.items.filter((t) => !t.done).length, 0);
+  // Closed tasks per day: the day they were completed (else their due day); ones still showing
+  // struck in the column (ticked this visit) are not repeated.
+  const shownIds = new Set(cols.flatMap((c) => c.items.map((t) => t.id)));
+  const doneAll = m.filter({ list: "done", query, projectId: pid });
+  const doneBy = (date: string) => doneAll.filter((t) => !shownIds.has(t.id) && (t.completedAt ? localDayStr(new Date(t.completedAt)) : t.dueDate) === date);
+  const [doneOpen, setDoneOpen] = useState(loadDoneOpen);
+  const toggleDone = () => {
+    const next = !doneOpen;
+    setDoneOpen(next);
+    saveDoneOpen(next);
+  };
   const firstCol = cols.findIndex((c) => c.items.length > 0);
 
   return (
-    <section data-lab-block="week" className="mt-4 flex min-w-0 flex-col gap-4 p-5" style={{ background: C.card, borderRadius: R.card }}>
+    <section data-lab-block="week" className="mt-4 flex min-w-0 flex-col gap-4 p-4 sm:p-6" style={{ background: C.card, borderRadius: R.card }}>
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex items-center gap-3">
           <h2 style={T.title}>Неделя</h2>
@@ -364,10 +448,25 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
         </span>
       </header>
 
-      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(7, minmax(0,1fr))" }}>
-        {cols.map(({ d, items }, ci) => (
-          <DayColumn key={d.date} d={d} items={items} m={m} pid={pid} onOpen={onOpen} markFirst={ci === firstCol} />
-        ))}
+      {/* The previous page's proportions: a day is at least 13.5rem wide; when seven don't fit,
+          the days scroll sideways inside the board — never the page. */}
+      <div className="-mx-1 snap-x overflow-x-auto px-1 pb-1">
+        <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(7, minmax(216px,1fr))" }}>
+          {cols.map(({ d, items }, ci) => (
+            <DayColumn
+              key={d.date}
+              d={d}
+              items={items}
+              m={m}
+              pid={pid}
+              onOpen={onOpen}
+              markFirst={ci === firstCol}
+              done={doneBy(d.date)}
+              doneOpen={doneOpen}
+              onDoneToggle={toggleDone}
+            />
+          ))}
+        </div>
       </div>
 
       <Backlog items={backlog} m={m} pid={pid} onOpen={onOpen} />
@@ -391,17 +490,17 @@ function KanbanColumn({ p, label, items, m, pid, onOpen, markFirst }: { p: Prior
   return (
     <div
       {...props}
-      className="flex min-w-0 flex-col gap-1.5 p-1.5 transition-colors duration-150"
-      style={{ minHeight: 320, borderRadius: R.inner, background: over ? DROP_BG : COL_BG }}
+      className="flex min-w-0 snap-start flex-col gap-2 p-2 transition-colors duration-150"
+      style={{ minHeight: 360, borderRadius: R.inner, background: over ? DROP_BG : COL_BG }}
     >
-      <div className="flex items-center justify-between gap-2 px-1.5 pb-1 pt-1.5" style={{ minHeight: 30 }}>
+      <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-2" style={{ minHeight: 32 }}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="shrink-0" style={{ width: 8, height: 8, borderRadius: 9, background: PRIO_DOT[p] }} />
-          <span className="truncate" style={{ ...T.body, fontWeight: 500 }}>
+          <span className="truncate" style={{ fontSize: 15, lineHeight: 1.3, fontWeight: 500 }}>
             {label}
           </span>
         </div>
-        {items.length > 0 && <span style={{ ...T.foot, ...T.num, fontWeight: 400, color: C.text3 }}>{items.length}</span>}
+        {items.length > 0 && <span style={{ ...T.body, ...T.num, fontWeight: 400, color: C.text3 }}>{items.length}</span>}
       </div>
       {shown.map((t, i) => (
         <TaskCard key={t.id} t={t} m={m} onOpen={() => onOpen(t)} mark={markFirst && i === 0} showDate />
@@ -420,17 +519,19 @@ function Kanban({ m, query, pid, onOpen }: { m: TasksModel; query: string; pid: 
   const firstCol = cols.findIndex((c) => c.items.length > 0);
   const openN = pool.filter((t) => !t.done).length;
   return (
-    <section data-lab-block="kanban" className="mt-4 flex min-w-0 flex-col gap-4 p-5" style={{ background: C.card, borderRadius: R.card }}>
+    <section data-lab-block="kanban" className="mt-4 flex min-w-0 flex-col gap-4 p-4 sm:p-6" style={{ background: C.card, borderRadius: R.card }}>
       <header className="flex items-center justify-between gap-4">
         <h2 style={T.title}>Канбан</h2>
         <span className="whitespace-nowrap" style={{ ...T.body, color: C.text3 }}>
           {openN} {plural(openN, "открытая", "открытые", "открытых")}
         </span>
       </header>
-      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(4, minmax(0,1fr))" }}>
-        {cols.map((c, ci) => (
-          <KanbanColumn key={c.p} p={c.p} label={c.label} items={c.items} m={m} pid={pid} onOpen={onOpen} markFirst={ci === firstCol} />
-        ))}
+      <div className="-mx-1 snap-x overflow-x-auto px-1 pb-1">
+        <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(4, minmax(240px,1fr))" }}>
+          {cols.map((c, ci) => (
+            <KanbanColumn key={c.p} p={c.p} label={c.label} items={c.items} m={m} pid={pid} onOpen={onOpen} markFirst={ci === firstCol} />
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -495,7 +596,7 @@ function GroupBlock({ g, m, onOpen, markRow, flat }: { g: Group; m: TasksModel; 
             type="button"
             aria-label={collapsed ? "Развернуть" : "Свернуть"}
             onClick={() => setCollapsed((c) => !c)}
-            className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#1E1E22]"
+            className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#19191C]"
             style={{ color: C.text3 }}
           >
             <ChevronDown size={16} strokeWidth={1.75} style={{ transform: collapsed ? "rotate(-90deg)" : undefined, transition: "transform .15s" }} />
@@ -513,7 +614,7 @@ function GroupBlock({ g, m, onOpen, markRow, flat }: { g: Group; m: TasksModel; 
             <button
               type="button"
               onClick={() => setAll((a) => !a)}
-              className="flex w-full items-center px-6 text-left transition-colors hover:bg-[#1C1C20]"
+              className="flex w-full items-center px-6 text-left transition-colors hover:bg-[#17171A]"
               style={{ height: 48, ...dashed, ...T.body, color: C.text2 }}
             >
               {all ? "Свернуть" : `Ещё ${hidden} ${plural(hidden, "задача", "задачи", "задач")}`}
@@ -537,7 +638,7 @@ function RailList<K extends string>({ items, value, onChange }: { items: { id: K
             key={r.id || "all"}
             type="button"
             onClick={() => onChange(r.id)}
-            className={`flex items-center gap-3 px-3 text-left transition-colors ${on ? "" : "hover:bg-[#1E1E22]"}`}
+            className={`flex items-center gap-3 px-3 text-left transition-colors ${on ? "" : "hover:bg-[#19191C]"}`}
             style={{ height: 40, borderRadius: R.small, background: on ? tint : undefined }}
           >
             <span className="min-w-0 flex-1 truncate" style={{ ...T.body, color: on ? C.text : C.text2 }}>
@@ -598,19 +699,35 @@ function Rail({ m, project, onProject, sort, onSort }: { m: TasksModel; project:
 /** Project filter for the week and kanban views (the list keeps it in its rail) — a quiet pill select. */
 function ProjectPick({ m, value, onChange }: { m: TasksModel; value: string; onChange: (id: string) => void }) {
   return (
-    <select
-      aria-label="Проект"
+    <Select
+      ariaLabel="Проект"
+      round
+      height={40}
+      maxWidth={260}
+      active={!!value}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="min-w-0 max-w-[240px] cursor-pointer truncate outline-none [color-scheme:dark]"
-      style={{ height: 40, borderRadius: 999, padding: "0 14px", fontSize: 14, background: value ? tint : C.card, color: value ? C.text : C.text2 }}
-    >
-      {projectRows(m).map((r) => (
-        <option key={r.id || "all"} value={r.id}>
-          {r.name} · {r.n}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      icon={<FolderKanban size={16} strokeWidth={1.75} color={value ? "#5AA9FF" : C.text2} className="shrink-0" />}
+      options={projectRows(m).map((r) => ({ value: r.id, label: r.name, hint: r.n }))}
+    />
+  );
+}
+
+/** Tag filter for the list (the old page's «#тег» filter) — the same quiet pill select. */
+function TagPick({ m, value, onChange }: { m: TasksModel; value: string; onChange: (tag: string) => void }) {
+  const open = m.tasks.filter((t) => !t.done);
+  return (
+    <Select
+      ariaLabel="Тег"
+      round
+      surface="card"
+      height={36}
+      maxWidth={220}
+      active={!!value}
+      value={value}
+      onChange={onChange}
+      options={[{ value: "", label: "Все теги" }, ...m.allTags.map((t) => ({ value: t, label: `#${t}`, hint: open.filter((x) => x.tags.includes(t)).length }))]}
+    />
   );
 }
 
@@ -623,6 +740,7 @@ export default function TasksByTime() {
   const [query, setQuery] = useState("");
   const [project, setProject] = useState("");
   const [sort, setSort] = useState<Sort>("due");
+  const [tag, setTag] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const closeEditor = useCallback(() => {
@@ -638,7 +756,7 @@ export default function TasksByTime() {
   const projectId = project && project !== "none" ? project : undefined;
   const open = (t: Task) => setEditId(t.id);
 
-  const items = m.filter({ list, query, projectId: pid });
+  const items = m.filter({ list, query, projectId: pid, tag: tag || null });
   const groups: Group[] =
     list === "done"
       ? doneGroups(items.slice(0, 120))
@@ -673,15 +791,16 @@ export default function TasksByTime() {
       {view === "kanban" && <Kanban m={m} query={query} pid={pid} onOpen={open} />}
 
       {view === "list" && (
-        <div className="mt-4 grid items-start gap-3" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(240px,300px)" }}>
+        <div className="mt-4 grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(240px,300px)]">
           <section data-lab-block="list" className="flex min-w-0 flex-col overflow-hidden" style={{ background: C.card, borderRadius: R.card }}>
-            <div data-lab-block="tabs" className="flex items-center justify-between gap-3 px-4 pt-4">
+            <div data-lab-block="tabs" className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
               <ListTabs
                 size={36}
                 items={LISTS.map((l) => ({ key: l.key, label: l.label, count: l.key === "done" ? undefined : m.counts[l.key], warn: l.key === "overdue" }))}
                 value={list}
                 onChange={setList}
               />
+              <TagPick m={m} value={tag} onChange={setTag} />
             </div>
             {list !== "done" && (
               <div data-lab-block="add" className="px-5 pb-5 pt-4" style={dashed}>
@@ -693,7 +812,9 @@ export default function TasksByTime() {
                 <Empty>
                   {query
                     ? `Ничего не найдено по «${query}»`
-                    : list === "today"
+                    : tag
+                      ? `Нет задач с тегом #${tag}`
+                      : list === "today"
                       ? "На сегодня задач нет"
                       : list === "overdue"
                         ? "Просроченных задач нет"

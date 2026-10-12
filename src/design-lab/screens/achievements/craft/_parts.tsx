@@ -406,7 +406,7 @@ export function AchievementsScreen({ Banner }: { Banner: ComponentType<BannerPro
               <article
                 key={x.id}
                 data-lab-block={i === 0 ? "collection-card" : undefined}
-                className="flex min-w-0 cursor-pointer flex-col items-center px-6 pb-7 pt-8 text-center transition-colors hover:bg-[#1C1C20]"
+                className="flex min-w-0 cursor-pointer flex-col items-center px-6 pb-7 pt-8 text-center transition-colors hover:bg-[#17171A]"
                 style={{ background: C.card, borderRadius: R.card }}
                 onClick={() => setOpen(x)}
               >

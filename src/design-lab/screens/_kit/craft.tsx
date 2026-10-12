@@ -2,10 +2,10 @@
  * Design lab · «Craft Dark» kit — the owner's DocumentCraft language (Figma C4spzkPV… node 411:1096)
  * rebuilt for a dark theme. Light → dark mapping keeps the same STEPS, not the same colours:
  *
- *   canvas #F6F6F6 → #0A0A0B   page panel #FFF → #121214   inner card #FAFAFA → #18181B
- *   pill control #F6F6F6 → #1E1E22   hairline #F0F0F0 → #232327   dashed row #E0E0E0 → #2A2A30
+ *   canvas #F6F6F6 → #060607   page panel #FFF → #0D0D0F   inner card #FAFAFA → #131315
+ *   pill control #F6F6F6 → #19191C   hairline #F0F0F0 → #1D1D21   dashed row #E0E0E0 → #242429
  *   text #031B38 → #F4F5F7   secondary #818181 → #9A9CA3   tertiary #BFBFBF → #5E6068
- *   accent #007AFF → #0A84FF (single accent)   red #F5222D → #FF5A52
+ *   accent #007AFF → #0A84FF (single accent)   red #F5222D → #FF4A42
  *
  * Measured from the frames (1600 wide): outer gutter 20, header 68 tall, 8 between header and page
  * panel, page panel radius 24, inner padding 24, inner cards radius 20, every control a pill
@@ -18,34 +18,34 @@ import { Check, ChevronDown, Plus, Search } from "lucide-react";
 
 // ── Tokens ──────────────────────────────────────────────────────────────────────────────────────
 export const C = {
-  canvas: "#0A0A0B",
-  panel: "#121214",
-  card: "#18181B",
-  raise: "#1E1E22",
-  hover: "#1B1B1F",
-  line: "#232327",
-  line2: "#2E2E34",
-  dash: "#2A2A30",
+  canvas: "#060607",
+  panel: "#0D0D0F",
+  card: "#131315",
+  raise: "#19191C",
+  hover: "#161619",
+  line: "#1D1D21",
+  line2: "#28282D",
+  dash: "#242429",
   text: "#F4F5F7",
   text2: "#9A9CA3",
   text3: "#5E6068",
   accent: "#0A84FF",
   accentHover: "#2B95FF",
-  green: "#34D399",
-  red: "#FF5A52",
-  amber: "#F5B544",
-  violet: "#9B8AFB",
+  green: "#2EE6A0",
+  red: "#FF4A42",
+  amber: "#FFB938",
+  violet: "#A08EFF",
 } as const;
 
 export type Tone = "blue" | "green" | "red" | "amber" | "neutral" | "violet";
 
-/** Tinted status recipe — fill 12%, border 28%, text in the hue. */
+/** Tinted status recipe — fill 15%, border 36%, text in the hue (denser since the darker palette). */
 export const TONE: Record<Tone, { fg: string; bg: string; bd: string; dot: string }> = {
-  blue: { fg: "#5AA9FF", bg: "rgba(10,132,255,0.12)", bd: "rgba(10,132,255,0.28)", dot: C.accent },
-  green: { fg: "#5BE0A6", bg: "rgba(52,211,153,0.10)", bd: "rgba(52,211,153,0.26)", dot: C.green },
-  red: { fg: "#FF7A73", bg: "rgba(255,90,82,0.10)", bd: "rgba(255,90,82,0.28)", dot: C.red },
-  amber: { fg: "#F7C46A", bg: "rgba(245,181,68,0.10)", bd: "rgba(245,181,68,0.26)", dot: C.amber },
-  violet: { fg: "#B3A6FC", bg: "rgba(155,138,251,0.10)", bd: "rgba(155,138,251,0.26)", dot: C.violet },
+  blue: { fg: "#5AA9FF", bg: "rgba(10,132,255,0.15)", bd: "rgba(10,132,255,0.36)", dot: C.accent },
+  green: { fg: "#4DF2B0", bg: "rgba(46,230,160,0.15)", bd: "rgba(46,230,160,0.36)", dot: C.green },
+  red: { fg: "#FF6B63", bg: "rgba(255,74,66,0.15)", bd: "rgba(255,74,66,0.36)", dot: C.red },
+  amber: { fg: "#FFCA5C", bg: "rgba(255,185,56,0.15)", bd: "rgba(255,185,56,0.36)", dot: C.amber },
+  violet: { fg: "#BBAEFF", bg: "rgba(160,142,255,0.15)", bd: "rgba(160,142,255,0.36)", dot: C.violet },
   neutral: { fg: C.text, bg: "transparent", bd: C.line2, dot: C.text },
 };
 
@@ -609,7 +609,7 @@ export function CapsuleBars({
                   maxWidth: 22,
                   height: h,
                   borderRadius: 999,
-                  background: on ? "linear-gradient(180deg,#3D9DFF,#0A6CF0)" : "#26262C",
+                  background: on ? "linear-gradient(180deg,#3D9DFF,#0A6CF0)" : "#202025",
                   boxShadow: on ? "0 6px 18px rgba(10,132,255,0.35)" : `inset 0 0 0 1px ${C.line}`,
                 }}
               />

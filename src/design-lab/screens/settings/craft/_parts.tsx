@@ -109,7 +109,7 @@ function Toggle({ on, onChange, label, disabled }: { on: boolean; onChange: (v: 
         onChange(!on);
       }}
       className="relative shrink-0 transition-colors duration-150 disabled:opacity-40"
-      style={{ width: 44, height: 26, borderRadius: 999, background: on ? C.accent : "#2C2C33" }}
+      style={{ width: 44, height: 26, borderRadius: 999, background: on ? C.accent : "#25252B" }}
     >
       <span
         className="absolute"
@@ -181,7 +181,7 @@ function Stepper({
   pad?: boolean;
 }) {
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
-  const btn = "grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors duration-150 hover:bg-[#2A2A30] disabled:opacity-30";
+  const btn = "grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors duration-150 hover:bg-[#242429] disabled:opacity-30";
   return (
     <div className="inline-flex shrink-0 items-center gap-1 px-1" style={{ height: 36, borderRadius: 999, background: C.raise }} onClick={(e) => e.stopPropagation()}>
       <button type="button" aria-label={`${label}: меньше`} className={btn} style={{ color: C.text2 }} disabled={value <= min} onClick={() => onChange(clamp(value - step))}>
@@ -1519,7 +1519,7 @@ function AiBlock({ m, narrow }: { m: SettingsModel; narrow?: boolean }) {
             className="outline-none placeholder:text-[#5E6068]"
             style={{ ...field, paddingRight: 44 }}
           />
-          <button type="button" aria-label={a.showKey ? "Скрыть ключ" : "Показать ключ"} onClick={a.toggleShow} className="absolute right-1 top-1 grid h-9 w-9 place-items-center rounded-full hover:bg-[#232327]" style={{ color: C.text2 }}>
+          <button type="button" aria-label={a.showKey ? "Скрыть ключ" : "Показать ключ"} onClick={a.toggleShow} className="absolute right-1 top-1 grid h-9 w-9 place-items-center rounded-full hover:bg-[#1D1D21]" style={{ color: C.text2 }}>
             {a.showKey ? <EyeOff {...ICON16} /> : <Eye {...ICON16} />}
           </button>
         </span>
@@ -1607,7 +1607,7 @@ function NotionBlock({ m }: { m: SettingsModel }) {
                   key={r.id}
                   type="button"
                   onClick={() => p.choose(r)}
-                  className="flex items-center gap-3 px-4 text-left transition-colors duration-150 hover:bg-[#2A2A30] focus-visible:bg-[#2A2A30] focus-visible:outline-none"
+                  className="flex items-center gap-3 px-4 text-left transition-colors duration-150 hover:bg-[#242429] focus-visible:bg-[#242429] focus-visible:outline-none"
                   style={{ minHeight: 44 }}
                 >
                   <span className="shrink-0" style={{ ...T.foot, color: C.text3, width: 64 }}>
@@ -1637,7 +1637,7 @@ function NotionBlock({ m }: { m: SettingsModel }) {
                 {t.title}
               </span>
               {t.url && (
-                <a href={t.url} target="_blank" rel="noopener noreferrer" title="Открыть в Notion" aria-label="Открыть в Notion" className="grid h-8 w-8 shrink-0 place-items-center rounded-full hover:bg-[#2A2A30]" style={{ color: C.text2 }}>
+                <a href={t.url} target="_blank" rel="noopener noreferrer" title="Открыть в Notion" aria-label="Открыть в Notion" className="grid h-8 w-8 shrink-0 place-items-center rounded-full hover:bg-[#242429]" style={{ color: C.text2 }}>
                   <ExternalLink size={15} strokeWidth={1.75} />
                 </a>
               )}
@@ -1651,7 +1651,7 @@ function NotionBlock({ m }: { m: SettingsModel }) {
             {t ? "Сменить" : "Выбрать"}
           </Btn>
           {t && (
-            <button type="button" title="Убрать цель" aria-label="Убрать цель" onClick={p.clear} className="grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors hover:bg-[#2A1A1A] hover:text-[#FF7A73]" style={{ color: C.text3 }}>
+            <button type="button" title="Убрать цель" aria-label="Убрать цель" onClick={p.clear} className="grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors hover:bg-[#2A1A1A] hover:text-[#FF6B63]" style={{ color: C.text3 }}>
               <X size={15} strokeWidth={1.75} />
             </button>
           )}
@@ -1796,7 +1796,7 @@ function TemplatesBlock({ m }: { m: SettingsModel }) {
             title="Удалить шаблон"
             aria-label="Удалить шаблон"
             onClick={r.del}
-            className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF7A73] focus-visible:opacity-100 group-hover:opacity-100"
+            className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF6B63] focus-visible:opacity-100 group-hover:opacity-100"
             style={{ color: C.text3 }}
           >
             <Trash2 {...ICON16} />

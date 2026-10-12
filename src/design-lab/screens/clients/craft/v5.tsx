@@ -98,7 +98,7 @@ function PayLine({ r, onToggle, onDelete, onOpen }: { r: LedgerPay; onToggle: ()
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
-      className="group grid cursor-pointer items-center gap-4 px-6 outline-none transition-colors duration-150 hover:bg-[#1C1C20] focus-visible:bg-[#1C1C20]"
+      className="group grid cursor-pointer items-center gap-4 px-6 outline-none transition-colors duration-150 hover:bg-[#17171A] focus-visible:bg-[#17171A]"
       style={{ gridTemplateColumns: "22px 128px minmax(0,1fr) auto 32px", minHeight: 56, ...dashed }}
     >
       <RoundCheck done={paid} onChange={onToggle} />
@@ -307,7 +307,7 @@ function Ledger({ all, rows, pending, paid, query, words, api }: { all: Payer[];
                 tabIndex={0}
                 onClick={() => api.open(r.id)}
                 onKeyDown={(e) => e.key === "Enter" && api.open(r.id)}
-                className="group flex cursor-pointer flex-col gap-2.5 px-6 py-4 outline-none transition-colors duration-150 hover:bg-[#1C1C20] focus-visible:bg-[#1C1C20]"
+                className="group flex cursor-pointer flex-col gap-2.5 px-6 py-4 outline-none transition-colors duration-150 hover:bg-[#17171A] focus-visible:bg-[#17171A]"
                 style={{ ...dashed, opacity: r.dim ? 0.6 : 1 }}
               >
                 <div className="flex items-center gap-3">
@@ -326,7 +326,7 @@ function Ledger({ all, rows, pending, paid, query, words, api }: { all: Payer[];
                 </div>
                 <div className="flex w-full gap-1" style={{ height: 5 }}>
                   {money.paidTotal > 0 && <span style={{ width: `${(money.paidTotal / max) * 100}%`, borderRadius: 999, background: C.accent }} />}
-                  {money.pending > 0 && <span style={{ width: `${(money.pending / max) * 100}%`, borderRadius: 999, background: money.overdue ? "rgba(245,181,68,0.55)" : "#3A3A42" }} />}
+                  {money.pending > 0 && <span style={{ width: `${(money.pending / max) * 100}%`, borderRadius: 999, background: money.overdue ? "rgba(255,185,56,0.55)" : "#3A3A42" }} />}
                   <span className="flex-1" style={{ borderRadius: 999, background: C.raise }} />
                 </div>
               </div>

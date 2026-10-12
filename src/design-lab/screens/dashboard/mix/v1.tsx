@@ -16,7 +16,8 @@
  *
  * Elements carry data-lab-block="…" so the board can open each one on its own page.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Bell,
   BellRing,
@@ -24,6 +25,7 @@ import {
   CalendarClock,
   ChartColumn,
   ChevronDown,
+  Focus,
   FolderKanban,
   LayoutDashboard,
   ListChecks,
@@ -35,7 +37,6 @@ import {
   Users,
   Video,
   Volume2,
-  X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -59,12 +60,14 @@ import {
 } from "@/design-lab/screens/_kit/craft";
 import { useDashboardModel, type DashboardModel, type TodayRow } from "@/design-lab/screens/dashboardModel";
 import { MeetingBell, MobileNav, Sidebar } from "@/design-lab/screens/_kit/craftShell";
+import { TagChips } from "@/design-lab/screens/_kit/controls";
+import { PrioChip, ProjectChip, TaskEditor, useTasksModel, type TaskDraft } from "@/design-lab/screens/tasks/craft/_parts";
 import { useData } from "@/store/DataProvider";
-import { localDayStr } from "@/lib/format";
+import { localDayStr, todayStr } from "@/lib/format";
 import { dueMeetingAlerts, meetingStart, MEETING_LEAD_MIN } from "@/lib/meetingAlerts";
 import { notificationPermission, requestNotifications } from "@/lib/reminders";
 import { playChime } from "@/lib/sound";
-import type { Meeting, Priority, Task } from "@/types";
+import type { Meeting, Task } from "@/types";
 
 // ── Local helpers ─────────────────────────────────────────────────────────────────────────────
 
@@ -153,7 +156,7 @@ function NoteButton({ onSave }: { onSave: (v: string) => void }) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 whitespace-nowrap px-4 transition-colors duration-150 hover:bg-[#232327]"
+        className="flex items-center gap-2 whitespace-nowrap px-4 transition-colors duration-150 hover:bg-[#1D1D21]"
         style={{ height: 44, borderRadius: 999, background: open ? C.line : C.raise, fontSize: 14, color: C.text }}
       >
         <NotebookPen size={16} strokeWidth={1.75} color={C.text2} />
@@ -209,7 +212,7 @@ function Progress({ m, closed, goal }: { m: DashboardModel; closed: number; goal
         {/* One capsule per task of the norm, lit as tasks are closed. */}
         <div className="flex gap-1.5" style={{ height: 8 }}>
           {Array.from({ length: goal }, (_, i) => (
-            <span key={i} className="flex-1" style={{ borderRadius: 999, background: i < closed ? C.accent : "#2C2C33", boxShadow: i < closed ? "0 0 10px rgba(10,132,255,0.35)" : undefined }} />
+            <span key={i} className="flex-1" style={{ borderRadius: 999, background: i < closed ? C.accent : "#25252B", boxShadow: i < closed ? "0 0 10px rgba(10,132,255,0.35)" : undefined }} />
           ))}
         </div>
       </div>
@@ -263,26 +266,110 @@ function MiniStat({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function PlanGauge({ pct, size }: { pct: number; size: number }) {
+const FIREWORKS_KEY = "crm-plan-fireworks-day";
+const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * A short fireworks burst over the gauge (~1.5 s, canvas, no layout cost): three or four shells in
+ * the kit's blues with a little green and amber, gravity and fade. `run` > 0 fires; each change
+ * fires again. Skipped entirely under prefers-reduced-motion.
+ */
+function Fireworks({ run }: { run: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!run || !cv || reducedMotion()) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const W = cv.offsetWidth;
+    const H = cv.offsetHeight;
+    cv.width = W * dpr;
+    cv.height = H * dpr;
+    ctx.scale(dpr, dpr);
+    const COLORS = [C.accent, "#5AA9FF", "#7CC0FF", C.green, C.amber, "#FFFFFF"];
+    type P = { x: number; y: number; vx: number; vy: number; c: string; born: number; life: number };
+    const parts: P[] = [];
+    const shells = [
+      { x: 0.5, y: 0.34, at: 0 },
+      { x: 0.28, y: 0.42, at: 180 },
+      { x: 0.72, y: 0.4, at: 320 },
+      { x: 0.5, y: 0.22, at: 520 },
+    ];
+    const t0 = performance.now();
+    const fired = new Set<number>();
+    let raf = 0;
+    const frame = (now: number) => {
+      const el = now - t0;
+      shells.forEach((sh, i) => {
+        if (fired.has(i) || el < sh.at) return;
+        fired.add(i);
+        const n = 34;
+        for (let k = 0; k < n; k++) {
+          const ang = (k / n) * Math.PI * 2 + Math.random() * 0.2;
+          const sp = 1.6 + Math.random() * 2.2;
+          parts.push({ x: sh.x * W, y: sh.y * H, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, c: COLORS[(i + k) % COLORS.length], born: now, life: 900 + Math.random() * 500 });
+        }
+      });
+      ctx.clearRect(0, 0, W, H);
+      for (const p of parts) {
+        const age = now - p.born;
+        if (age > p.life) continue;
+        p.vx *= 0.975;
+        p.vy = p.vy * 0.975 + 0.045;
+        p.x += p.vx;
+        p.y += p.vy;
+        ctx.globalAlpha = Math.max(0, 1 - age / p.life);
+        ctx.fillStyle = p.c;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      if (el < 1700) raf = requestAnimationFrame(frame);
+      else ctx.clearRect(0, 0, W, H);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(raf);
+      ctx.clearRect(0, 0, W, H);
+    };
+  }, [run]);
+  return <canvas ref={ref} aria-hidden className="pointer-events-none absolute z-30" style={{ inset: "-70px -60px -20px", width: "calc(100% + 120px)", height: "calc(100% + 90px)" }} />;
+}
+
+/** Half-ring gauge. `hot` (hover/focus) thickens and lights the arc; the number lifts a touch. */
+function PlanGauge({ pct, size, hot }: { pct: number; size: number; hot: boolean }) {
   const sw = 16;
   const r = size / 2 - sw / 2 - 4;
   const len = Math.PI * r;
   const p = Math.max(0, Math.min(100, pct));
   const arc = `M${size / 2 - r},${size / 2} A${r},${r} 0 0 1 ${size / 2 + r},${size / 2}`;
   const h = size / 2 + sw / 2 + 2;
+  const ease = "stroke-width .18s ease, filter .18s ease, stroke .18s ease";
   return (
     <div className="relative" style={{ width: size, height: h }}>
-      <svg width={size} height={h} viewBox={`0 0 ${size} ${h}`}>
+      <svg width={size} height={h} viewBox={`0 0 ${size} ${h}`} style={{ overflow: "visible" }}>
         <defs>
           <linearGradient id="mixgauge" x1="0" x2="1">
             <stop offset="0" stopColor="#0A6CF0" />
             <stop offset="1" stopColor="#7CC0FF" />
           </linearGradient>
         </defs>
-        <path d={arc} fill="none" stroke={C.raise} strokeWidth={sw} strokeLinecap="round" />
-        {p > 0 && <path d={arc} fill="none" stroke="url(#mixgauge)" strokeWidth={sw} strokeLinecap="round" strokeDasharray={`${(p / 100) * len} ${len}`} />}
+        <path d={arc} fill="none" stroke={hot ? C.line2 : C.raise} strokeWidth={hot ? sw + 3 : sw} strokeLinecap="round" style={{ transition: ease }} />
+        {p > 0 && (
+          <path
+            d={arc}
+            fill="none"
+            stroke="url(#mixgauge)"
+            strokeWidth={hot ? sw + 3 : sw}
+            strokeLinecap="round"
+            strokeDasharray={`${(p / 100) * len} ${len}`}
+            style={{ transition: ease, filter: hot ? "drop-shadow(0 0 10px rgba(10,132,255,0.45))" : "none" }}
+          />
+        )}
       </svg>
-      <div className="absolute inset-x-0 text-center" style={{ bottom: 4 }}>
+      <div className="absolute inset-x-0 text-center" style={{ bottom: 4, transform: hot ? "translateY(-2px)" : undefined, transition: "transform .18s ease" }}>
         <div style={{ ...T.num, fontSize: size >= 200 ? 40 : 34, lineHeight: 1 }}>{Math.round(p)}%</div>
         <div style={{ ...T.foot, color: C.text2, marginTop: 6 }}>плана дня</div>
       </div>
@@ -291,15 +378,93 @@ function PlanGauge({ pct, size }: { pct: number; size: number }) {
 }
 
 function PlanTile({ m, closed, goal, wide }: { m: DashboardModel; closed: number; goal: number; wide: boolean }) {
+  const { tasks } = useData();
   const pct = goal ? (closed / goal) * 100 : 0;
+  const full = closed >= goal;
+  const [hot, setHot] = useState(false);
+  const [burst, setBurst] = useState(0);
+  const closedToday = useMemo(() => {
+    const today = todayStr();
+    return tasks
+      .filter((t) => t.done && t.completedAt && localDayStr(new Date(t.completedAt)) === today)
+      .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
+  }, [tasks]);
+  // Fireworks once a day, the first time the norm is reached (remembered per browser, by date).
+  useEffect(() => {
+    if (!full) return;
+    const today = todayStr();
+    try {
+      if (localStorage.getItem(FIREWORKS_KEY) === today) return;
+      localStorage.setItem(FIREWORKS_KEY, today);
+    } catch {
+      /* storage blocked — still celebrate, it just may repeat on reload */
+    }
+    setBurst((b) => b + 1);
+  }, [full]);
+  const left = Math.max(0, goal - closed);
   return (
     <Tile area="plan">
       <TileHead title="План дня" sub={`${closed} из ${goal} ${plural(goal, "задачи", "задач", "задач")} нормы`} />
       <div className="flex flex-1 items-center justify-center py-5">
-        <PlanGauge pct={pct} size={wide ? 208 : 180} />
+        <div
+          className="relative outline-none"
+          role={full ? "button" : undefined}
+          tabIndex={0}
+          aria-label={`План дня: ${closed} из ${goal}`}
+          onMouseEnter={() => setHot(true)}
+          onMouseLeave={() => setHot(false)}
+          onFocus={() => setHot(true)}
+          onBlur={() => setHot(false)}
+          onClick={() => full && setBurst((b) => b + 1)}
+          onKeyDown={(e) => full && e.key === "Enter" && setBurst((b) => b + 1)}
+          style={{ cursor: full ? "pointer" : "default" }}
+        >
+          <PlanGauge pct={pct} size={wide ? 208 : 180} hot={hot} />
+          <Fireworks run={burst} />
+          <div
+            role="tooltip"
+            className="pointer-events-none absolute left-1/2 z-20 p-3"
+            style={{
+              bottom: "calc(100% + 12px)",
+              width: 260,
+              background: C.panel,
+              borderRadius: R.small,
+              boxShadow: "0 16px 40px rgba(0,0,0,0.5)",
+              opacity: hot ? 1 : 0,
+              transform: `translate(-50%, ${hot ? 0 : 4}px)`,
+              transition: "opacity .16s ease, transform .16s ease",
+            }}
+          >
+            <div className="flex items-baseline justify-between" style={{ ...T.foot, color: C.text2 }}>
+              <span>Норма дня</span>
+              <span style={{ ...T.num, color: C.text }}>
+                {closed} из {goal}
+              </span>
+            </div>
+            <div className="mt-2 flex gap-1" style={{ height: 6 }}>
+              {Array.from({ length: goal }, (_, i) => (
+                <span key={i} className="flex-1" style={{ borderRadius: 999, background: i < closed ? C.accent : C.line2 }} />
+              ))}
+            </div>
+            <div className="mt-2" style={{ ...T.foot, color: full ? TONE.green.fg : C.text3 }}>
+              {full ? (closed > goal ? `Норма выполнена, +${closed - goal} сверху` : "Норма выполнена") : `Осталось ${left} ${plural(left, "задача", "задачи", "задач")}`}
+            </div>
+            {closedToday.length > 0 && (
+              <ul className="mt-2.5 flex flex-col gap-1 pt-2.5" style={{ ...dashed, backgroundPosition: "left top" }}>
+                {closedToday.slice(0, 6).map((t) => (
+                  <li key={t.id} className="flex items-center gap-2" style={{ fontSize: 12, color: C.text2 }}>
+                    <span className="shrink-0" style={{ width: 4, height: 4, borderRadius: 9, background: C.accent }} />
+                    <span className="truncate">{t.title}</span>
+                  </li>
+                ))}
+                {closedToday.length > 6 && <li style={{ fontSize: 12, color: C.text3 }}>и ещё {closedToday.length - 6}</li>}
+              </ul>
+            )}
+          </div>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-4 pt-4" style={{ ...dashed, backgroundPosition: "left top" }}>
-        <MiniStat label="Осталось до нормы" value={Math.max(0, goal - closed)} />
+        <MiniStat label="Осталось до нормы" value={left} />
         <MiniStat label="Время сегодня" value={dur(m.kpi.minutesToday)} />
       </div>
     </Tile>
@@ -589,23 +754,26 @@ function TaskLine({ r, onToggle, onOpen, onDelete }: { r: TodayRow; onToggle: ()
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
-      className="group grid cursor-pointer items-center gap-4 px-6 outline-none transition-colors duration-150 hover:bg-[#1C1C20] focus-visible:bg-[#1C1C20]"
+      className="group grid cursor-pointer items-center gap-4 px-6 outline-none transition-colors duration-150 hover:bg-[#17171A] focus-visible:bg-[#17171A]"
       style={{ gridTemplateColumns: "22px minmax(0,1fr) auto 32px", minHeight: 56, ...dashed, opacity: r.overLimit && !r.done ? 0.55 : 1 }}
     >
       <RoundCheck done={r.done} onChange={onToggle} />
       <div className="flex min-w-0 items-center gap-2">
-        {r.priority > 0 && <span className="shrink-0" style={{ width: 6, height: 6, borderRadius: 9, background: PRIO_DOT[r.priority] }} />}
         <span
-          className="truncate"
-          style={{ ...T.cell, fontSize: 15, color: r.done ? C.text3 : C.text, textDecoration: r.done ? "line-through" : undefined, textDecorationColor: C.text3 }}
+          className="min-w-0 truncate"
+          style={{ ...T.cell, minWidth: 96, color: r.done ? C.text3 : C.text, textDecoration: r.done ? "line-through" : undefined, textDecorationColor: C.text3 }}
         >
           {r.title}
         </span>
-        {r.projectName && (
-          <span className="shrink-0 truncate" style={{ ...T.body, color: C.text3, maxWidth: 180 }}>
-            · {r.projectName}
+        <PrioChip p={r.priority} />
+        {r.projectName && r.task.projectId && (
+          <span className="hidden min-w-0 shrink sm:inline-flex">
+            <ProjectChip id={r.task.projectId} name={r.projectName} />
           </span>
         )}
+        <span className="hidden min-w-0 shrink md:inline-flex">
+          <TagChips tags={r.task.tags} />
+        </span>
         {r.subtasksTotal > 0 && (
           <span className="shrink-0" style={{ ...T.foot, color: C.text3 }}>
             {r.subtasksDone}/{r.subtasksTotal}
@@ -623,148 +791,11 @@ function TaskLine({ r, onToggle, onOpen, onDelete }: { r: TodayRow; onToggle: ()
           e.stopPropagation();
           onDelete();
         }}
-        className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF7A73] focus-visible:opacity-100 group-hover:opacity-100"
+        className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF6B63] focus-visible:opacity-100 group-hover:opacity-100"
         style={{ color: C.text3 }}
       >
         <Trash2 size={16} strokeWidth={1.75} />
       </button>
-    </div>
-  );
-}
-
-const PRIOS: { p: Priority; label: string }[] = [
-  { p: 1, label: "Высокий" },
-  { p: 2, label: "Средний" },
-  { p: 3, label: "Низкий" },
-  { p: 0, label: "Без приоритета" },
-];
-
-/** Task editor — opens on a row click: title, description, due date, priority, project, estimate; delete with undo. */
-function TaskEditor({ task, onClose, onDelete }: { task: Task; onClose: () => void; onDelete: () => void }) {
-  const { projects, updateTask } = useData();
-  const [title, setTitle] = useState(task.title);
-  const [description, setDescription] = useState(task.description ?? "");
-  const [due, setDue] = useState(task.dueDate ?? "");
-  const [priority, setPriority] = useState<Priority>(task.priority);
-  const [projectId, setProjectId] = useState(task.projectId ?? "");
-  const [estimate, setEstimate] = useState(task.estimateMin ? String(task.estimateMin) : "");
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, [onClose]);
-  const save = () => {
-    if (!title.trim()) return;
-    const est = Math.max(0, Math.round(Number(estimate)));
-    updateTask(task.id, {
-      title: title.trim(),
-      description: description.trim() || undefined,
-      dueDate: due || undefined,
-      priority,
-      projectId: projectId || undefined,
-      estimateMin: est || undefined,
-    });
-    onClose();
-  };
-  const field = { height: 44, borderRadius: 12, background: C.card, boxShadow: `inset 0 0 0 1px ${C.line}`, padding: "0 14px", fontSize: 14, color: C.text } as const;
-  const label = { ...T.foot, color: C.text3, marginBottom: 6 } as const;
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center p-6" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)" }} onMouseDown={onClose}>
-      <div
-        role="dialog"
-        aria-label="Задача"
-        className="flex w-full max-w-[560px] flex-col gap-5 p-6"
-        style={{ background: C.panel, borderRadius: R.page, boxShadow: `inset 0 0 0 1px ${C.line2}, 0 30px 80px rgba(0,0,0,0.6)` }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <span style={T.h2}>Задача</span>
-          <IconBtn title="Закрыть" onClick={onClose}>
-            <X {...ICON} />
-          </IconBtn>
-        </div>
-        <input
-          autoFocus
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && save()}
-          className="w-full bg-transparent outline-none"
-          style={{ ...field, height: 52, fontSize: 16 }}
-          placeholder="Название задачи"
-        />
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={3}
-          placeholder="Описание, ссылки, детали…"
-          className="w-full resize-none bg-transparent outline-none placeholder:text-[#5E6068]"
-          style={{ ...field, height: "auto", padding: "12px 14px", lineHeight: 1.45 }}
-        />
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col">
-            <span style={label}>Срок</span>
-            <input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="outline-none [color-scheme:dark]" style={field} />
-          </label>
-          <label className="flex flex-col">
-            <span style={label}>Оценка, мин</span>
-            <input type="number" min={0} step={15} value={estimate} onChange={(e) => setEstimate(e.target.value)} placeholder="—" className="outline-none" style={field} />
-          </label>
-        </div>
-        <div className="flex flex-col">
-          <span style={label}>Приоритет</span>
-          <div className="flex flex-wrap gap-1.5">
-            {PRIOS.map(({ p, label: l }) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setPriority(p)}
-                className="inline-flex items-center gap-2 px-3.5 transition-colors"
-                style={{
-                  height: 36,
-                  borderRadius: 999,
-                  fontSize: 14,
-                  background: priority === p ? C.raise : "transparent",
-                  boxShadow: `inset 0 0 0 1px ${priority === p ? C.line2 : C.line}`,
-                  color: priority === p ? C.text : C.text2,
-                }}
-              >
-                <span style={{ width: 6, height: 6, borderRadius: 9, background: PRIO_DOT[p] }} />
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
-        <label className="flex flex-col">
-          <span style={label}>Проект</span>
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="outline-none [color-scheme:dark]" style={field}>
-            <option value="">Без проекта</option>
-            {projects.map((pr) => (
-              <option key={pr.id} value={pr.id}>
-                {pr.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex items-center justify-between pt-1">
-          <button
-            type="button"
-            onClick={onDelete}
-            className="inline-flex items-center gap-2 px-4 transition-colors hover:bg-[#2A1A1A]"
-            style={{ height: 44, borderRadius: 999, color: TONE.red.fg, fontSize: 14 }}
-          >
-            <Trash2 size={16} strokeWidth={1.75} />
-            Удалить
-          </button>
-          <div className="flex gap-2">
-            <Btn kind="ghost" onClick={onClose}>
-              Отмена
-            </Btn>
-            <Btn onClick={save} disabled={!title.trim()}>
-              Сохранить
-            </Btn>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -866,8 +897,15 @@ export default function MixBentoKanban() {
   /** Overdue tasks leave m.today once ticked — keep a snapshot so they stay (struck) in the list. */
   const [closedHere, setClosedHere] = useState<TodayRow[]>([]);
   const { tasks } = useData();
+  const tm = useTasksModel();
+  const navigate = useNavigate();
   const [editId, setEditId] = useState<string | null>(null);
-  const editing = editId ? tasks.find((t) => t.id === editId) : undefined;
+  /** «Новая задача» dialog — the Tasks screen's form in create mode, due today by default. */
+  const [draft, setDraft] = useState<TaskDraft | null>(null);
+  const closeEditor = useCallback(() => {
+    setEditId(null);
+    setDraft(null);
+  }, []);
   const removeTask = (t: Task) => {
     setClosedHere((xs) => xs.filter((x) => x.id !== t.id));
     setEditId(null);
@@ -881,9 +919,10 @@ export default function MixBentoKanban() {
   const rows = useMemo(() => {
     const match = (r: TodayRow) => !q || r.title.toLowerCase().includes(q) || (r.projectName ?? "").toLowerCase().includes(q);
     const ids = new Set(m.today.map((r) => r.id));
-    const extra = closedHere.filter((r) => !ids.has(r.id)).map((r) => ({ ...r, done: true }));
+    const alive = new Set(tasks.map((t) => t.id));
+    const extra = closedHere.filter((r) => !ids.has(r.id) && alive.has(r.id)).map((r) => ({ ...r, done: true }));
     return [...m.today, ...extra].filter(match);
-  }, [m.today, closedHere, q]);
+  }, [m.today, closedHere, q, tasks]);
 
   const toggle = (r: TodayRow) => {
     if (!r.done && r.overdue) setClosedHere((xs) => [r, ...xs.filter((x) => x.id !== r.id)]);
@@ -892,11 +931,6 @@ export default function MixBentoKanban() {
   };
 
   const open = m.today.filter((r) => !r.done).length;
-
-  const startAdd = () => {
-    addInput.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    addInput.current?.focus({ preventScroll: true });
-  };
 
   return (
     <div className="flex min-h-screen gap-2 p-3 lg:p-5" style={rootStyle}>
@@ -911,12 +945,23 @@ export default function MixBentoKanban() {
             <span className="hidden sm:inline" style={{ color: C.line2 }}>/</span>
             <span style={{ color: C.text }}>Сегодня</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <span className="mr-2 hidden whitespace-nowrap md:inline" style={{ ...T.body, color: C.text3 }}>
               {m.dateLabel}
             </span>
             <MeetingBell dot={m.followUps.length > 0} />
-            <Btn icon={<Plus size={16} strokeWidth={2} />} onClick={startAdd}>
+            {/* Full-screen focus mode (/focus) — a labelled pill from tablet up, an icon on phones. */}
+            <span className="hidden sm:inline-flex">
+              <Btn kind="ghost" icon={<Focus size={16} strokeWidth={1.75} />} onClick={() => navigate("/focus")}>
+                Фокус
+              </Btn>
+            </span>
+            <span className="sm:hidden">
+              <IconBtn title="Фокус" filled onClick={() => navigate("/focus")}>
+                <Focus size={16} strokeWidth={1.75} />
+              </IconBtn>
+            </span>
+            <Btn icon={<Plus size={16} strokeWidth={2} />} onClick={() => setDraft({ dueDate: todayStr() })}>
               Новая задача
             </Btn>
           </div>
@@ -951,7 +996,7 @@ export default function MixBentoKanban() {
           <MeetingsTile m={m} />
         </div>
       </main>
-      {editing && <TaskEditor key={editing.id} task={editing} onClose={() => setEditId(null)} onDelete={() => removeTask(editing)} />}
+      {(editId || draft) && <TaskEditor taskId={editId} draft={draft ?? undefined} m={tm} onClose={closeEditor} />}
     </div>
   );
 }

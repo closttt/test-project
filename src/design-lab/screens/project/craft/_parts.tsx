@@ -414,7 +414,7 @@ export function ProjectSwitcher({ m, size = 44, align = "right" }: { m: ProjectM
         type="button"
         data-lab-block="switcher"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 whitespace-nowrap pl-3.5 pr-3 transition-colors duration-150 hover:bg-[#232327]"
+        className="flex items-center gap-2 whitespace-nowrap pl-3.5 pr-3 transition-colors duration-150 hover:bg-[#1D1D21]"
         style={{ height: size, borderRadius: 999, background: open ? C.line : C.raise, fontSize: 14, color: C.text }}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -444,7 +444,7 @@ export function ProjectSwitcher({ m, size = 44, align = "right" }: { m: ProjectM
                   m.select(p.id);
                   setOpen(false);
                 }}
-                className={`flex items-center gap-3 px-3 text-left transition-colors duration-150 ${on ? "" : "hover:bg-[#1B1B1F]"}`}
+                className={`flex items-center gap-3 px-3 text-left transition-colors duration-150 ${on ? "" : "hover:bg-[#161619]"}`}
                 style={{ minHeight: 52, borderRadius: R.small, background: on ? "rgba(10,132,255,0.14)" : undefined }}
               >
                 <Ring pct={total ? (done / total) * 100 : 0} size={24} stroke={3} />
@@ -519,7 +519,7 @@ export function TaskRow({
         }}
         onClick={() => onOpen(t)}
         onKeyDown={(e) => e.key === "Enter" && onOpen(t)}
-        className="group grid cursor-pointer items-center gap-3 outline-none transition-colors duration-150 hover:bg-[#1C1C20] focus-visible:bg-[#1C1C20]"
+        className="group grid cursor-pointer items-center gap-3 outline-none transition-colors duration-150 hover:bg-[#17171A] focus-visible:bg-[#17171A]"
         style={{ gridTemplateColumns: "22px minmax(0,1fr) auto 32px", minHeight: height, paddingLeft: pad, paddingRight: Math.max(8, pad - 12) }}
       >
         <RoundCheck done={t.done} onChange={() => m.actions.toggle(t.id)} />
@@ -540,7 +540,7 @@ export function TaskRow({
                 e.stopPropagation();
                 setSubs((s) => !s);
               }}
-              className="inline-flex shrink-0 items-center gap-1 px-2 transition-colors duration-150 hover:bg-[#26262C]"
+              className="inline-flex shrink-0 items-center gap-1 px-2 transition-colors duration-150 hover:bg-[#202025]"
               style={{ height: 24, borderRadius: 999, ...T.foot, color: subs ? C.text : C.text3 }}
               title={subs ? "Свернуть подзадачи" : "Показать подзадачи"}
             >
@@ -560,7 +560,7 @@ export function TaskRow({
             e.stopPropagation();
             m.actions.remove(t);
           }}
-          className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF7A73] focus-visible:opacity-100 group-hover:opacity-100"
+          className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF6B63] focus-visible:opacity-100 group-hover:opacity-100"
           style={{ color: C.text3 }}
         >
           <Trash2 size={16} strokeWidth={1.75} />
@@ -637,7 +637,7 @@ export function AddSection({ m, height = 36, block }: { m: ProjectModel; height?
       <button
         type="button"
         onClick={() => setOn(true)}
-        className={`inline-flex items-center gap-2 whitespace-nowrap px-3.5 transition-colors duration-150 hover:bg-[#26262C] ${block ? "w-full justify-center" : ""}`}
+        className={`inline-flex items-center gap-2 whitespace-nowrap px-3.5 transition-colors duration-150 hover:bg-[#202025] ${block ? "w-full justify-center" : ""}`}
         style={{ height, borderRadius: 999, background: C.raise, color: C.text, fontSize: 13 }}
       >
         <Plus size={14} strokeWidth={2} color={C.text2} />
@@ -743,7 +743,7 @@ export function HoverIcon({ children, title, onClick, danger, size = 30 }: { chi
         e.stopPropagation();
         onClick();
       }}
-      className={`grid shrink-0 place-items-center rounded-full transition-colors duration-150 ${danger ? "hover:bg-[#2A1A1A] hover:text-[#FF7A73]" : "hover:bg-[#26262C] hover:text-[#F4F5F7]"}`}
+      className={`grid shrink-0 place-items-center rounded-full transition-colors duration-150 ${danger ? "hover:bg-[#2A1A1A] hover:text-[#FF6B63]" : "hover:bg-[#202025] hover:text-[#F4F5F7]"}`}
       style={{ width: size, height: size, color: C.text3 }}
     >
       {children}
@@ -874,7 +874,7 @@ export function FileRow({ f }: { f: Attachment }) {
     <button
       type="button"
       onClick={() => openFile(f)}
-      className="flex w-full items-center gap-3 px-3 text-left transition-colors duration-150 hover:bg-[#232327]"
+      className="flex w-full items-center gap-3 px-3 text-left transition-colors duration-150 hover:bg-[#1D1D21]"
       style={{ minHeight: 56, borderRadius: R.small, background: C.raise }}
     >
       <span className="grid shrink-0 place-items-center" style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(10,132,255,0.10)", color: "#5AA9FF", fontSize: 9, fontWeight: 500, letterSpacing: "0.02em" }}>
@@ -930,7 +930,7 @@ export function Materials({ m }: { m: ProjectModel }) {
           href={l.url}
           target="_blank"
           rel="noreferrer"
-          className="flex items-center gap-3 px-3 transition-colors duration-150 hover:bg-[#232327]"
+          className="flex items-center gap-3 px-3 transition-colors duration-150 hover:bg-[#1D1D21]"
           style={{ minHeight: 48, borderRadius: R.small, background: C.raise }}
         >
           <Link2 size={16} strokeWidth={1.75} color={C.text2} />

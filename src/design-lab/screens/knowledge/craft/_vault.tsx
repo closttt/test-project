@@ -64,6 +64,7 @@ export function VaultPanel({
   globalQuery,
   onOpenNote,
   compact,
+  stacked,
 }: {
   k: Knowledge;
   /** Selected folder; null = «Все заметки». */
@@ -73,6 +74,8 @@ export function VaultPanel({
   globalQuery: string;
   onOpenNote: (id: string, fresh?: boolean) => void;
   compact?: boolean;
+  /** Phones: the tree sits above the list instead of beside it. */
+  stacked?: boolean;
 }) {
   const { entries } = k.vault;
   const [query, setQuery] = useState("");
@@ -219,7 +222,7 @@ export function VaultPanel({
             if (!open && kids.length) toggle(e.id);
           }}
           onDoubleClick={() => setRenaming(e.id)}
-          className={`group flex cursor-pointer items-center gap-1.5 pr-1 transition-colors duration-150 ${on || dropping ? "" : "hover:bg-[#1C1C20]"}`}
+          className={`group flex cursor-pointer items-center gap-1.5 pr-1 transition-colors duration-150 ${on || dropping ? "" : "hover:bg-[#17171A]"}`}
           style={{ height: 36, borderRadius: 10, paddingLeft: depth * 14 + 4, background: on || dropping ? TINT : undefined }}
           title={noteTitle(e)}
         >
@@ -285,7 +288,7 @@ export function VaultPanel({
 
   return (
     <>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2.5">
           <span className="mt-0.5 shrink-0" style={{ color: C.text2 }}>
             <NotebookPen size={18} strokeWidth={1.75} />
@@ -334,9 +337,12 @@ export function VaultPanel({
         </div>
       </div>
 
-      <div className="mt-5 flex min-h-0" style={{ height: 560 }}>
+      <div className={`mt-5 flex min-h-0 ${stacked ? "flex-col" : ""}`} style={{ height: stacked ? undefined : 560 }}>
         {/* Tree */}
-        <div className="flex min-h-0 shrink-0 flex-col pr-3" style={{ width: compact ? 216 : 248, borderRight: `1px solid ${C.line}` }}>
+        <div
+          className={`flex min-h-0 shrink-0 flex-col ${stacked ? "pb-3" : "pr-3"}`}
+          style={stacked ? { maxHeight: 280, borderBottom: `1px solid ${C.line}` } : { width: compact ? 216 : 248, borderRight: `1px solid ${C.line}` }}
+        >
           <label className="flex shrink-0 items-center gap-2 px-3" style={{ height: 40, borderRadius: 999, background: C.raise }}>
             <Search size={15} strokeWidth={1.75} color={C.text3} className="shrink-0" />
             <input
@@ -360,7 +366,7 @@ export function VaultPanel({
                 setQuery("");
                 setFolder(null);
               }}
-              className={`flex cursor-pointer items-center gap-2 px-2 transition-colors duration-150 ${rootOn || dropTarget === "root" ? "" : "hover:bg-[#1C1C20]"}`}
+              className={`flex cursor-pointer items-center gap-2 px-2 transition-colors duration-150 ${rootOn || dropTarget === "root" ? "" : "hover:bg-[#17171A]"}`}
               style={{ height: 36, borderRadius: 10, background: rootOn || dropTarget === "root" ? TINT : undefined }}
             >
               <NotebookPen size={16} strokeWidth={1.75} color={rootOn ? C.accent : C.text2} className="shrink-0" />
@@ -386,7 +392,7 @@ export function VaultPanel({
         </div>
 
         {/* Folder contents / search results */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col pl-3">
+        <div className={`flex min-h-0 min-w-0 flex-col ${stacked ? "flex-none pt-2" : "flex-1 pl-3"}`} style={stacked ? { height: 480 } : undefined}>
           <div className="flex shrink-0 items-baseline gap-3 px-4 pb-3" style={{ minHeight: 40, paddingTop: 10 }}>
             <span className="min-w-0 truncate" style={{ ...T.cell, fontWeight: 500 }}>
               {q ? `Найдено: ${list.length}` : current ? noteTitle(current) : "Все заметки"}
@@ -408,7 +414,7 @@ export function VaultPanel({
                 {...dropProps(f.id)}
                 onClick={() => setFolder(f.id)}
                 onKeyDown={(e) => e.key === "Enter" && setFolder(f.id)}
-                className={`flex cursor-pointer items-center gap-3 px-4 py-3 outline-none transition-colors duration-150 ${dropTarget === f.id ? "" : "hover:bg-[#1C1C20]"}`}
+                className={`flex cursor-pointer items-center gap-3 px-4 py-3 outline-none transition-colors duration-150 ${dropTarget === f.id ? "" : "hover:bg-[#17171A]"}`}
                 style={{ ...dashed, background: dropTarget === f.id ? TINT : undefined }}
               >
                 <Folder size={16} strokeWidth={1.75} color={C.text2} className="shrink-0" />

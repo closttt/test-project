@@ -18,6 +18,13 @@ import "react-resizable/css/styles.css";
 import "@/index.css";
 import "@/design-lab/fonts.css";
 
+// Agentation — visual feedback tool for AI agents (agentation.dev), same as the real app's dev
+// entry. Only when the frame is opened on its own (bug hunting in a tab) — not inside the board's
+// preview iframes, where it would sit on top of every concept.
+const Agentation = import.meta.env.DEV && window.top === window.self
+  ? lazy(() => import("agentation").then((m) => ({ default: m.Agentation })))
+  : null;
+
 /**
  * One preview frame of the design lab: the REAL app (same routes, store, actions) rendered on a
  * snapshot of production data, with a chosen set of skins layered on top.
@@ -106,6 +113,11 @@ async function boot() {
                       <App />
                       <PomodoroBar />
                     </>
+                  )}
+                  {Agentation && (
+                    <Suspense fallback={null}>
+                      <Agentation />
+                    </Suspense>
                   )}
                 </PomodoroProvider>
               </ToastProvider>

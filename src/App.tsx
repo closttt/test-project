@@ -21,11 +21,11 @@ const Knowledge = lazy(() => import("@/design-lab/screens/knowledge/craft/v5"));
 const SettingsPage = lazy(() => import("@/design-lab/screens/settings/craft/v1"));
 const Achievements = lazy(() => import("@/design-lab/screens/achievements/craft/v1"));
 const FocusPage = lazy(() => import("@/pages/FocusPage"));
-const Changelog = lazy(() => import("@/pages/Changelog"));
+const Changelog = lazy(() => import("@/design-lab/screens/changelog/craft/v1"));
 const Archive = lazy(() => import("@/pages/Archive"));
 
 function PageFallback() {
-  return <div className="min-h-screen" style={{ background: "#0A0A0B" }} />;
+  return <div className="min-h-screen" style={{ background: "#060607" }} />;
 }
 
 export default function App() {
@@ -45,10 +45,11 @@ export default function App() {
           <Route path="/knowledge" element={<Knowledge />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/achievements" element={<Achievements />} />
-          {/* Not redesigned yet — keep their legacy chrome. */}
+          <Route path="/changelog" element={<Changelog />} />
+          {/* Not redesigned yet — keeps its legacy chrome. Out of the menu (owner, 2026-10-12);
+              still reachable from «+N в архиве» on a project and via g→r. */}
           <Route element={<AppLayout />}>
             <Route path="/archive" element={<Archive />} />
-            <Route path="/changelog" element={<Changelog />} />
           </Route>
           {/* «Планер» removed by the owner (2026-10-12). Its data (planBlocks/planTemplates) stays
               in AppData untouched; the page code is in pages/Planner.tsx. */}

@@ -161,7 +161,7 @@ function Line({ n, m, onOpen, block }: { n: Note; m: NotesModel; onOpen: () => v
       data-lab-block={block}
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
-      className="group grid cursor-pointer items-center gap-4 px-6 outline-none transition-colors duration-150 hover:bg-[#1C1C20] focus-visible:bg-[#1C1C20]"
+      className="group grid cursor-pointer items-center gap-4 px-6 outline-none transition-colors duration-150 hover:bg-[#17171A] focus-visible:bg-[#17171A]"
       style={{ gridTemplateColumns: "14px minmax(0,1fr) auto auto 72px", minHeight: 60, ...dashed }}
     >
       <span className="grid place-items-center">{n.pinned ? <PinMark size={13} /> : <span style={{ width: 6, height: 6, borderRadius: 9, background: C.line2 }} />}</span>

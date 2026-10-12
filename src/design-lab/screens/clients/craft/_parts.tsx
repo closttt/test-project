@@ -270,7 +270,7 @@ export function HoverTrash({ onClick, title = "Удалить", always }: { onCl
         e.stopPropagation();
         onClick();
       }}
-      className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF7A73] focus-visible:opacity-100 ${always ? "" : "opacity-0 group-hover:opacity-100"}`}
+      className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF6B63] focus-visible:opacity-100 ${always ? "" : "opacity-0 group-hover:opacity-100"}`}
       style={{ color: C.text3 }}
     >
       <Trash2 {...ICON16} />
@@ -481,7 +481,7 @@ export function PaymentLog({
                     title={p.status === "paid" ? "Вернуть в ожидание" : "Отметить оплаченным"}
                     aria-label={p.status === "paid" ? "Вернуть в ожидание" : "Отметить оплаченным"}
                     onClick={() => onUpdate(p.id, { status: p.status === "paid" ? "pending" : "paid" })}
-                    className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-[#232327]"
+                    className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-[#1D1D21]"
                     style={{ color: C.text2 }}
                   >
                     {p.status === "paid" ? <RotateCcw {...ICON16} /> : <Check {...ICON16} />}
@@ -549,7 +549,7 @@ function ProjectsBlock({ client, bg = C.card, rowBg }: { client: Client; bg?: st
                 title="Отвязать проект"
                 aria-label={`Отвязать проект: ${p.name}`}
                 onClick={() => updateProject(p.id, { clientId: undefined })}
-                className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-[opacity,background] duration-150 hover:bg-[#232327] group-hover:opacity-100 focus-visible:opacity-100"
+                className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-[opacity,background] duration-150 hover:bg-[#1D1D21] group-hover:opacity-100 focus-visible:opacity-100"
                 style={{ color: C.text2 }}
               >
                 <X {...ICON16} />

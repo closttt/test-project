@@ -387,7 +387,7 @@ export function MonthStepper({ value, onChange, min, totals }: { value: YM; onCh
       aria-label={dir < 0 ? "Предыдущий месяц" : "Следующий месяц"}
       disabled={disabled}
       onClick={() => step(dir)}
-      className="grid h-9 w-9 place-items-center rounded-full transition-colors duration-150 enabled:hover:bg-[#26262C] disabled:opacity-30"
+      className="grid h-9 w-9 place-items-center rounded-full transition-colors duration-150 enabled:hover:bg-[#202025] disabled:opacity-30"
       style={{ color: C.text }}
     >
       {dir < 0 ? <ChevronLeft size={18} strokeWidth={1.75} /> : <ChevronRight size={18} strokeWidth={1.75} />}
@@ -403,7 +403,7 @@ export function MonthStepper({ value, onChange, min, totals }: { value: YM; onCh
             setYear(value.y);
             setOpen((o) => !o);
           }}
-          className="inline-flex items-center gap-2 whitespace-nowrap px-3 transition-colors duration-150 hover:bg-[#26262C]"
+          className="inline-flex items-center gap-2 whitespace-nowrap px-3 transition-colors duration-150 hover:bg-[#202025]"
           style={{ height: 36, minWidth: 168, justifyContent: "center", borderRadius: 999, fontSize: 15, color: C.text, background: open ? C.raise : undefined }}
           aria-haspopup="dialog"
           aria-expanded={open}
@@ -421,11 +421,11 @@ export function MonthStepper({ value, onChange, min, totals }: { value: YM; onCh
           aria-label="Выбор месяца"
         >
           <div className="mb-3 flex items-center justify-between">
-            <button type="button" aria-label="Предыдущий год" disabled={year <= min.y} onClick={() => setYear((y) => y - 1)} className="grid h-8 w-8 place-items-center rounded-full enabled:hover:bg-[#26262C] disabled:opacity-30">
+            <button type="button" aria-label="Предыдущий год" disabled={year <= min.y} onClick={() => setYear((y) => y - 1)} className="grid h-8 w-8 place-items-center rounded-full enabled:hover:bg-[#202025] disabled:opacity-30">
               <ChevronLeft size={16} strokeWidth={1.75} />
             </button>
             <span style={{ ...T.cell, ...T.num }}>{year}</span>
-            <button type="button" aria-label="Следующий год" disabled={year >= thisMonth().y} onClick={() => setYear((y) => y + 1)} className="grid h-8 w-8 place-items-center rounded-full enabled:hover:bg-[#26262C] disabled:opacity-30">
+            <button type="button" aria-label="Следующий год" disabled={year >= thisMonth().y} onClick={() => setYear((y) => y + 1)} className="grid h-8 w-8 place-items-center rounded-full enabled:hover:bg-[#202025] disabled:opacity-30">
               <ChevronRight size={16} strokeWidth={1.75} />
             </button>
           </div>
@@ -444,7 +444,7 @@ export function MonthStepper({ value, onChange, min, totals }: { value: YM; onCh
                     onChange({ y: year, m: i });
                     setOpen(false);
                   }}
-                  className="flex flex-col items-center justify-center gap-0.5 transition-colors duration-150 enabled:hover:bg-[#26262C] disabled:opacity-25"
+                  className="flex flex-col items-center justify-center gap-0.5 transition-colors duration-150 enabled:hover:bg-[#202025] disabled:opacity-25"
                   style={{ height: 52, borderRadius: R.small, background: on ? "rgba(10,132,255,0.16)" : C.card }}
                 >
                   <span style={{ fontSize: 13, color: on ? C.text : C.text2 }}>{label}</span>
@@ -486,7 +486,7 @@ export function Card({ children, className = "", style, block, onClick }: { chil
     <section
       data-lab-block={block}
       onClick={onClick}
-      className={`flex min-w-0 flex-col ${onClick ? "cursor-pointer transition-colors duration-150 hover:bg-[#1B1B1F]" : ""} ${className}`}
+      className={`flex min-w-0 flex-col ${onClick ? "cursor-pointer transition-colors duration-150 hover:bg-[#161619]" : ""} ${className}`}
       style={{ background: C.card, borderRadius: R.card, ...style }}
     >
       {children}
@@ -744,7 +744,7 @@ export function TaskRow({ t, projectName, onOpen, onToggle, onDelete, pad = 24, 
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
-      className="group grid cursor-pointer items-center gap-4 outline-none transition-colors duration-150 hover:bg-[#1C1C20] focus-visible:bg-[#1C1C20]"
+      className="group grid cursor-pointer items-center gap-4 outline-none transition-colors duration-150 hover:bg-[#17171A] focus-visible:bg-[#17171A]"
       style={{ gridTemplateColumns: `22px minmax(0,1fr) auto${onDelete ? " 32px" : ""}`, minHeight: 52, padding: `0 ${pad}px`, ...dashed }}
     >
       <RoundCheck done={t.done} onChange={onToggle} />
@@ -765,7 +765,7 @@ export function TaskRow({ t, projectName, onOpen, onToggle, onDelete, pad = 24, 
             e.stopPropagation();
             onDelete();
           }}
-          className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF7A73] focus-visible:opacity-100 group-hover:opacity-100"
+          className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF6B63] focus-visible:opacity-100 group-hover:opacity-100"
           style={{ color: C.text3 }}
         >
           <Trash2 size={16} strokeWidth={1.75} />

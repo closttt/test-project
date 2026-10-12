@@ -216,7 +216,7 @@ export function FilterPill({ on, onClick, children, count, size = 36 }: { on?: b
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-3.5 transition-colors duration-150 ${on ? "" : "hover:bg-[#232327]"}`}
+      className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-3.5 transition-colors duration-150 ${on ? "" : "hover:bg-[#1D1D21]"}`}
       style={{ height: size, borderRadius: 999, fontSize: 14, background: on ? "rgba(10,132,255,0.14)" : C.raise, color: on ? C.text : C.text2 }}
     >
       {children}
@@ -250,7 +250,7 @@ export function HoverActions({ note, m, extra, quietPin }: { note: Note; m: Note
         title={note.pinned ? "Открепить" : "Закрепить"}
         aria-label={note.pinned ? "Открепить" : "Закрепить"}
         onClick={() => m.actions.pin(note.id)}
-        className={`${btn} hover:bg-[#232327] ${note.pinned && !quietPin ? "" : "opacity-0 group-hover:opacity-100"}`}
+        className={`${btn} hover:bg-[#1D1D21] ${note.pinned && !quietPin ? "" : "opacity-0 group-hover:opacity-100"}`}
         style={{ color: note.pinned ? C.accent : C.text3 }}
       >
         <Pin size={16} strokeWidth={1.75} fill={note.pinned ? C.accent : "none"} style={{ transform: "rotate(30deg)" }} />
@@ -260,7 +260,7 @@ export function HoverActions({ note, m, extra, quietPin }: { note: Note; m: Note
         title="Удалить"
         aria-label="Удалить заметку"
         onClick={() => m.actions.remove(note)}
-        className={`${btn} opacity-0 hover:bg-[#2A1A1A] hover:text-[#FF7A73] group-hover:opacity-100`}
+        className={`${btn} opacity-0 hover:bg-[#2A1A1A] hover:text-[#FF6B63] group-hover:opacity-100`}
         style={{ color: C.text3 }}
       >
         <Trash2 size={16} strokeWidth={1.75} />
@@ -594,8 +594,8 @@ export function SheetsArt({ size = 132 }: { size?: number }) {
           <stop offset="1" stopColor="#0A6CF0" />
         </linearGradient>
       </defs>
-      <rect x="18" y="14" width="70" height="86" rx="14" transform="rotate(-10 18 14)" fill="#1E1E22" stroke="#2E2E34" />
-      <rect x="44" y="6" width="70" height="86" rx="14" transform="rotate(8 44 6)" fill="#232327" stroke="#2E2E34" />
+      <rect x="18" y="14" width="70" height="86" rx="14" transform="rotate(-10 18 14)" fill="#19191C" stroke="#28282D" />
+      <rect x="44" y="6" width="70" height="86" rx="14" transform="rotate(8 44 6)" fill="#1D1D21" stroke="#28282D" />
       <rect x="31" y="10" width="70" height="88" rx="14" fill="url(#notesheet)" />
       <rect x="31.5" y="10.5" width="69" height="87" rx="13.5" stroke="rgba(255,255,255,0.28)" />
       <rect x="43" y="28" width="34" height="5" rx="2.5" fill="#fff" />

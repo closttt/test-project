@@ -13,7 +13,7 @@ import { useId, type CSSProperties } from "react";
 const EASE = "cubic-bezier(.2,.8,.2,1)";
 const DUR = 220;
 
-/** `light` = sitting on a light surface (the project page cover): a softer, greyer shadow. */
+/** `light` = sitting on a light surface (the project page cover): a softer shadow. */
 export function Folder({ width = 120, open = false, light = false, style }: { width?: number | string; open?: boolean; light?: boolean; style?: CSSProperties }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const id = (k: string) => `fld${uid}${k}`;
@@ -25,7 +25,7 @@ export function Folder({ width = 120, open = false, light = false, style }: { wi
       className="relative block shrink-0 select-none"
       style={{ width, aspectRatio: "160 / 128", perspective: 560, transform: open ? "translateY(-3%)" : undefined, transition: t("transform"), ...style }}
     >
-      {/* Shadow: a soft dark blob plus a faint blue glow, spreading as the folder rises. */}
+      {/* Shadow: a soft neutral contact blob, spreading as the folder rises. No coloured glow. */}
       <span
         className="absolute"
         style={{
@@ -34,25 +34,11 @@ export function Folder({ width = 120, open = false, light = false, style }: { wi
           bottom: "-4%",
           height: "12%",
           borderRadius: "50%",
-          background: light ? "rgba(20,30,50,0.32)" : "rgba(0,0,0,0.55)",
+          background: light ? "rgba(0,0,0,0.26)" : "rgba(0,0,0,0.55)",
           filter: "blur(7px)",
           opacity: open ? 0.75 : 1,
           transform: open ? "scaleX(1.06) translateY(4%)" : undefined,
           transition: t("opacity", "transform"),
-        }}
-      />
-      <span
-        className="absolute"
-        style={{
-          left: "18%",
-          right: "18%",
-          bottom: "-2%",
-          height: "16%",
-          borderRadius: "50%",
-          background: light ? "rgba(10,132,255,0.22)" : "rgba(10,132,255,0.35)",
-          filter: "blur(14px)",
-          opacity: open ? 0.9 : 0.55,
-          transition: t("opacity"),
         }}
       />
 

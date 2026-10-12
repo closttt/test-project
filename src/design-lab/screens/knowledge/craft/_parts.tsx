@@ -19,6 +19,7 @@ import {
   Bold,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Code,
   ExternalLink,
@@ -636,14 +637,14 @@ export function KnStyles() {
 .kn-prose strong{font-weight:600;color:#F4F5F7}
 .kn-prose a{color:#5AA9FF}
 .kn-prose blockquote{border-left:2px solid rgba(10,132,255,.55);color:#9A9CA3}
-.kn-prose pre{background:#1E1E22;border-radius:12px}
-.kn-prose code{background:#1E1E22;border-radius:6px}
-.kn-prose hr{border:none;height:1px;background-image:linear-gradient(to right,#2E2E34 50%,transparent 50%);background-size:8px 1px}
+.kn-prose pre{background:#19191C;border-radius:12px}
+.kn-prose code{background:#19191C;border-radius:6px}
+.kn-prose hr{border:none;height:1px;background-image:linear-gradient(to right,#28282D 50%,transparent 50%);background-size:8px 1px}
 .kn-prose img{border-radius:12px}
 .kn-prose li::marker{color:#5E6068}
 .kn-prose ul[data-type=taskList] input{accent-color:#0A84FF}
 .kn-prose p.is-empty::before,.kn-prose h1.is-empty::before,.kn-prose h2.is-empty::before,.kn-prose h3.is-empty::before{color:#5E6068}
-.kn-scroll{scrollbar-width:thin;scrollbar-color:#2E2E34 transparent}
+.kn-scroll{scrollbar-width:thin;scrollbar-color:#28282D transparent}
 .kn-noscroll{scrollbar-width:none}
 .kn-clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .kn-clamp1{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
@@ -683,7 +684,7 @@ export function Pill({ on, onClick, children, count, icon, size = 36 }: { on?: b
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap transition-colors duration-150 ${on ? "" : "hover:bg-[#1B1B1F]"}`}
+      className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap transition-colors duration-150 ${on ? "" : "hover:bg-[#161619]"}`}
       style={{ height: size, padding: "0 14px", borderRadius: 999, fontSize: 14, background: on ? TINT : "transparent", boxShadow: on ? "none" : `inset 0 0 0 1px ${C.line}`, color: on ? C.text : C.text2 }}
     >
       {icon && <span style={{ color: on ? C.accent : C.text3, display: "inline-flex" }}>{icon}</span>}
@@ -727,7 +728,7 @@ export function RowAct({ title, onClick, danger, children }: { title: string; on
         e.stopPropagation();
         onClick();
       }}
-      className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors duration-150 ${danger ? "hover:bg-[#2A1A1A] hover:text-[#FF7A73]" : "hover:bg-[#232327] hover:text-[#F4F5F7]"}`}
+      className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors duration-150 ${danger ? "hover:bg-[#2A1A1A] hover:text-[#FF6B63]" : "hover:bg-[#1D1D21] hover:text-[#F4F5F7]"}`}
       style={{ color: C.text3 }}
     >
       {children}
@@ -843,9 +844,9 @@ export function Cover({ item, ratio = "16 / 10", radius = 14, loading }: { item:
       {item.coverUrl && !bad ? (
         <img src={item.coverUrl} alt="" loading="lazy" onError={() => setBad(true)} className="absolute inset-0 h-full w-full object-cover" />
       ) : loading ? (
-        <div className="absolute inset-0 animate-pulse" style={{ background: "linear-gradient(110deg,#1E1E22 30%,#26262C 50%,#1E1E22 70%)" }} />
+        <div className="absolute inset-0 animate-pulse" style={{ background: "linear-gradient(110deg,#19191C 30%,#202025 50%,#19191C 70%)" }} />
       ) : (
-        <div className="absolute inset-0 grid place-items-center" style={{ background: "linear-gradient(160deg,#1F2632,#18181B)" }}>
+        <div className="absolute inset-0 grid place-items-center" style={{ background: "linear-gradient(160deg,#1F2632,#131315)" }}>
           {item.domain ? (
             <span className="flex flex-col items-center gap-2">
               <Favicon domain={item.domain} size={44} radius={12} />
@@ -910,11 +911,7 @@ export const toggleSeen = (lib: Lib, i: LibraryItem) => lib.setClosed(i, i.statu
 // ── Modal shell (TaskEditor recipe) ────────────────────────────────────────────────────────────
 
 export function Modal({ title, onClose, width = 560, children, footer, label }: { title: ReactNode; onClose: () => void; width?: number; children: ReactNode; footer?: ReactNode; label?: string }) {
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, [onClose]);
+  useEsc(onClose);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center p-6" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)" }} onMouseDown={onClose}>
       <div
@@ -971,7 +968,7 @@ function TagsField({ tags, known, onChange }: { tags: string[]; known: string[];
         {tags.map((t) => (
           <span key={t} className="inline-flex items-center gap-1 pl-2.5 pr-1" style={{ height: 28, borderRadius: 999, background: TINT, color: C.text, fontSize: 13 }}>
             #{t}
-            <button type="button" aria-label={`Убрать тег ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))} className="grid h-5 w-5 place-items-center rounded-full hover:bg-[#232327]" style={{ color: C.text2 }}>
+            <button type="button" aria-label={`Убрать тег ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))} className="grid h-5 w-5 place-items-center rounded-full hover:bg-[#1D1D21]" style={{ color: C.text2 }}>
               <X size={12} strokeWidth={2} />
             </button>
           </span>
@@ -1008,7 +1005,7 @@ export function Rating({ value, onChange }: { value?: number; onChange: (v: numb
   return (
     <span className="flex items-center gap-0.5">
       {[1, 2, 3, 4, 5].map((n) => (
-        <button key={n} type="button" aria-label={`Оценка ${n}`} onClick={() => onChange(value === n ? undefined : n)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#1E1E22]">
+        <button key={n} type="button" aria-label={`Оценка ${n}`} onClick={() => onChange(value === n ? undefined : n)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#19191C]">
           <Star size={16} strokeWidth={1.75} color={(value ?? 0) >= n ? C.accent : C.text3} fill={(value ?? 0) >= n ? C.accent : "none"} />
         </button>
       ))}
@@ -1057,7 +1054,7 @@ export function LibraryFields({ f, set, known, compact, minimal }: { f: LibraryD
               style={{ ...field, height: 36, fontSize: 13 }}
             />
           ) : (
-            <button type="button" onClick={() => setCoverOpen(true)} className="self-start px-3 transition-colors hover:bg-[#1E1E22]" style={{ height: 32, borderRadius: 999, fontSize: 13, color: C.text2 }}>
+            <button type="button" onClick={() => setCoverOpen(true)} className="self-start px-3 transition-colors hover:bg-[#19191C]" style={{ height: 32, borderRadius: 999, fontSize: 13, color: C.text2 }}>
               Обложка по ссылке
             </button>
           )}
@@ -1217,6 +1214,30 @@ export function LibraryEditor({ k, item, draft, onClose }: { k: Knowledge; item?
   );
 }
 
+/** Prev/next for flipping through a list in the reading view; a missing handler = the end. */
+export interface LibraryNav {
+  onPrev?: () => void;
+  onNext?: () => void;
+  /** «3 / 12». */
+  label?: string;
+}
+
+function NavBtn({ title, onClick, children }: { title: string; onClick?: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={!onClick}
+      onClick={onClick}
+      className="grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors duration-150 enabled:hover:bg-[#1D1D21] enabled:hover:text-[#F4F5F7] disabled:opacity-30"
+      style={{ color: C.text2 }}
+    >
+      {children}
+    </button>
+  );
+}
+
 /** Textarea that grows with its text — a plain line of writing, no box around it. */
 function GrowText({ value, onChange, onBlur, placeholder, style, autoFocus }: { value: string; onChange: (v: string) => void; onBlur?: () => void; placeholder?: string; style?: CSSProperties; autoFocus?: boolean }) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -1246,7 +1267,7 @@ function GrowText({ value, onChange, onBlur, placeholder, style, autoFocus }: { 
  * title, where it's from, what it's about and your notes — click any text to edit, it saves when
  * you leave the field. Type, status, rating, tags and cover stay folded under «Подробнее».
  */
-export function LibraryView({ k, item, onClose }: { k: Knowledge; item: LibraryItem; onClose: () => void }) {
+export function LibraryView({ k, item, onClose, nav }: { k: Knowledge; item: LibraryItem; onClose: () => void; nav?: LibraryNav }) {
   const [f, setF] = useState<LibraryDraft>(() => toDraft(item));
   const [more, setMore] = useState(false);
   const fRef = useRef(f);
@@ -1294,22 +1315,57 @@ export function LibraryView({ k, item, onClose }: { k: Knowledge; item: LibraryI
     onClose();
   }, [commit, onClose]);
 
+  // ← → flip through the list without closing (edits are saved first). Not while typing.
+  const layer = useRef<object | null>(null);
+  const navRef = useRef(nav);
+  navRef.current = nav;
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (!layer.current || !isTop(layer.current)) return;
+      const t = e.target as HTMLElement | null;
+      if ((t && t.closest("input, textarea, [contenteditable=true]")) || e.metaKey || e.ctrlKey || e.altKey) return;
+      const go = e.key === "ArrowLeft" ? navRef.current?.onPrev : navRef.current?.onNext;
+      if (!go) return;
+      e.preventDefault();
+      commit();
+      go();
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [commit]);
+  const flip = (go: () => void) => () => {
+    commit();
+    go();
+  };
+
   const done = item.status === "done";
   const source = [item.domain, item.author].filter(Boolean).join(" · ");
   return (
-    <Sheet label="Материал" onClose={close} width={760}>
-      <div className="flex items-center gap-3 pl-10 pr-4 pt-4" style={{ minHeight: 56 }}>
+    <Sheet label="Материал" onClose={close} width={820} layerRef={layer}>
+      <div className="flex items-center gap-3 pl-5 pr-3 pt-4 sm:pl-10 sm:pr-4" style={{ minHeight: 56 }}>
         <SeenCheck item={item} onToggle={() => k.lib.setClosed(item, !done)} size={24} />
         <span className="min-w-0 flex-1 truncate" style={{ ...T.foot, color: C.text3 }}>
           {done ? "Закрыто" : item.status === "doing" ? "В процессе" : LIBRARY_TYPES[item.type].label}
         </span>
-        <span className="mr-2 hidden shrink-0 whitespace-nowrap sm:inline" style={{ ...T.foot, color: C.text3 }}>
-          {dateLabel(item.createdAt)}
-        </span>
-        {item.url && (
-          <RowAct title="Открыть источник" onClick={() => window.open(item.url, "_blank", "noopener")}>
-            <ExternalLink {...SM} />
-          </RowAct>
+        {nav ? (
+          <span className="flex shrink-0 items-center">
+            <NavBtn title="Предыдущий (←)" onClick={nav.onPrev ? flip(nav.onPrev) : undefined}>
+              <ChevronLeft {...ICON} />
+            </NavBtn>
+            {nav.label && (
+              <span className="min-w-[44px] text-center" style={{ ...T.foot, ...T.num, fontWeight: 400, color: C.text3 }}>
+                {nav.label}
+              </span>
+            )}
+            <NavBtn title="Следующий (→)" onClick={nav.onNext ? flip(nav.onNext) : undefined}>
+              <ChevronRight {...ICON} />
+            </NavBtn>
+          </span>
+        ) : (
+          <span className="mr-2 hidden shrink-0 whitespace-nowrap sm:inline" style={{ ...T.foot, color: C.text3 }}>
+            {dateLabel(item.createdAt)}
+          </span>
         )}
         <RowAct
           title="Удалить"
@@ -1326,7 +1382,10 @@ export function LibraryView({ k, item, onClose }: { k: Knowledge; item: LibraryI
         </RowAct>
       </div>
       <div className="kn-scroll min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[640px] px-10 pb-16 pt-6">
+        <div className="mx-auto w-full max-w-[680px] px-5 pb-16 pt-4 sm:px-10">
+          <div className="mb-7">
+            <Cover item={item} ratio="16 / 9" radius={18} />
+          </div>
           <GrowText
             value={f.title}
             onChange={(title) => set({ title })}
@@ -1334,15 +1393,19 @@ export function LibraryView({ k, item, onClose }: { k: Knowledge; item: LibraryI
             placeholder="Название"
             style={{ fontSize: 30, lineHeight: 1.2, fontWeight: 500, letterSpacing: "-0.03em" }}
           />
-          {source && (
-            <div className="mt-3 flex min-w-0 items-center gap-2" style={{ ...T.body, color: C.text3 }}>
-              {item.domain && <Favicon domain={item.domain} size={16} radius={4} />}
-              {item.url ? (
-                <a href={item.url} target="_blank" rel="noreferrer" className="truncate hover:text-[#F4F5F7]">
-                  {source}
+          {(source || item.url) && (
+            <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2" style={{ ...T.body, color: C.text3 }}>
+              {source && (
+                <span className="flex min-w-0 items-center gap-2">
+                  {item.domain && <Favicon domain={item.domain} size={16} radius={4} />}
+                  <span className="truncate">{source}</span>
+                </span>
+              )}
+              {item.url && (
+                <a href={item.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1.5 transition-colors hover:text-[#F4F5F7]" style={{ color: "#5AA9FF" }}>
+                  <ExternalLink size={14} strokeWidth={1.75} />
+                  Открыть источник
                 </a>
-              ) : (
-                <span className="truncate">{source}</span>
               )}
             </div>
           )}
@@ -1581,25 +1644,49 @@ export function MoveMenu({ k, entry, align = "right" }: { k: Knowledge; entry: N
 
 export function MenuRow({ icon, children, onClick, danger }: { icon?: ReactNode; children: ReactNode; onClick: () => void; danger?: boolean }) {
   return (
-    <button type="button" onClick={onClick} className="flex w-full min-w-0 items-center gap-2.5 px-3 text-left transition-colors hover:bg-[#1E1E22]" style={{ height: 40, borderRadius: R.small, fontSize: 14, color: danger ? TONE.red.fg : C.text }}>
+    <button type="button" onClick={onClick} className="flex w-full min-w-0 items-center gap-2.5 px-3 text-left transition-colors hover:bg-[#19191C]" style={{ height: 40, borderRadius: R.small, fontSize: 14, color: danger ? TONE.red.fg : C.text }}>
       {icon && <span className="shrink-0" style={{ color: danger ? TONE.red.fg : C.text2 }}>{icon}</span>}
       {children}
     </button>
   );
 }
 
-/** Esc closes — shared by the open-item sheets. */
-function useEsc(onClose: () => void) {
+/** Open overlays, newest last — Esc (and the reading view's arrows) belong to the top one only. */
+const layers: object[] = [];
+const isTop = (id: object) => layers[layers.length - 1] === id;
+
+/** Registers an overlay layer for as long as the component is mounted; returns its id. */
+function useLayer() {
+  const [id] = useState(() => ({}));
   useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    layers.push(id);
+    return () => {
+      const i = layers.indexOf(id);
+      if (i >= 0) layers.splice(i, 1);
+    };
+  }, [id]);
+  return id;
+}
+
+/** Esc closes the top overlay only — a sheet opened over another closes alone. */
+function useEsc(onClose: () => void) {
+  const id = useLayer();
+  const ref = useRef(onClose);
+  ref.current = onClose;
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isTop(id)) ref.current();
+    };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
-  }, [onClose]);
+  }, [id]);
+  return id;
 }
 
 /** The quiet page an opened item sits on: dim backdrop, one plain sheet, no frame around content. */
-export function Sheet({ label, onClose, children, width = 820 }: { label: string; onClose: () => void; children: ReactNode; width?: number }) {
-  useEsc(onClose);
+export function Sheet({ label, onClose, children, width = 820, layerRef }: { label: string; onClose: () => void; children: ReactNode; width?: number; layerRef?: { current: object | null } }) {
+  const layer = useEsc(onClose);
+  if (layerRef) layerRef.current = layer;
   return (
     <div className="fixed inset-0 z-50 grid place-items-center p-6" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)" }} onMouseDown={onClose}>
       <div
@@ -1792,7 +1879,7 @@ export function NoteRow({ k, n, on, onOpen, q, showPath = true, onDelete, dragga
       }}
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen()}
-      className={`group flex cursor-pointer items-start gap-3 px-4 py-3.5 outline-none transition-colors duration-150 ${on ? "" : "hover:bg-[#1C1C20]"}`}
+      className={`group flex cursor-pointer items-start gap-3 px-4 py-3.5 outline-none transition-colors duration-150 ${on ? "" : "hover:bg-[#17171A]"}`}
       style={{ ...dashed, background: on ? TINT : undefined }}
     >
       <FileText size={16} strokeWidth={1.75} color={on ? C.accent : C.text3} className="mt-0.5 shrink-0" />

@@ -21,6 +21,7 @@ import {
   BookOpen,
   CalendarClock,
   ChartColumn,
+  History,
   FolderKanban,
   LayoutDashboard,
   ListChecks,
@@ -37,6 +38,7 @@ import {
 import { Btn, C, IconBtn, Logo, R, T, dashed, rootStyle } from "@/design-lab/screens/_kit/craft";
 import { useData } from "@/store/DataProvider";
 import { NAV_ITEMS, loadNavHidden, loadNavOrder } from "@/lib/navConfig";
+import { hasUnseen } from "@/lib/changelog";
 import { isOverdue, isToday, localDayStr } from "@/lib/format";
 import { isSnoozed } from "@/lib/taskGrouping";
 import { meetingStart, MEETING_LEAD_MIN } from "@/lib/meetingAlerts";
@@ -54,7 +56,8 @@ export type NavId =
   | "knowledge"
   | "settings"
   | "achievements"
-  | "archive";
+  | "archive"
+  | "changelog";
 
 export const NAV_ICON: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -68,23 +71,25 @@ export const NAV_ICON: Record<string, LucideIcon> = {
   settings: Settings,
   achievements: Trophy,
   archive: Archive,
+  changelog: History,
 };
 
 const ICON = { size: 18, strokeWidth: 1.75 } as const;
 
 /** Nav pill. Active = accent-tinted fill + accent icon, no outline. `to` makes it a link to that route. */
-export function SideItem({ icon: Icon, label, active, badge, to }: { icon: LucideIcon; label: string; active?: boolean; badge?: number; to?: string }) {
+export function SideItem({ icon: Icon, label, active, badge, dot, to }: { icon: LucideIcon; label: string; active?: boolean; badge?: number; dot?: boolean; to?: string }) {
   const navigate = useNavigate();
   return (
     <button
       type="button"
       onClick={to ? () => navigate(to) : undefined}
       aria-current={active ? "page" : undefined}
-      className={`flex w-full items-center gap-3 px-4 text-left transition-colors duration-150 ${active ? "" : "hover:bg-[#1B1B1F]"}`}
+      className={`flex w-full items-center gap-3 px-4 text-left transition-colors duration-150 ${active ? "" : "hover:bg-[#161619]"}`}
       style={{ height: 44, borderRadius: R.inner, background: active ? "rgba(10,132,255,0.14)" : undefined, color: active ? C.text : C.text2, fontSize: 14 }}
     >
       <Icon {...ICON} color={active ? C.accent : C.text2} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {dot ? <span aria-label="есть новое" style={{ width: 8, height: 8, borderRadius: 9, background: C.accent }} /> : null}
       {badge ? (
         <span className="grid place-items-center" style={{ minWidth: 22, height: 22, padding: "0 7px", borderRadius: 99, background: C.accent, color: "#fff", fontSize: 12 }}>
           {badge}
@@ -150,16 +155,34 @@ function useNavItems() {
   return items;
 }
 
+/** A release the owner hasn't opened yet → a dot on «История» until the page is visited. */
+function useUnseenChangelog() {
+  const [unseen, setUnseen] = useState(() => {
+    try {
+      return hasUnseen();
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    const on = () => setUnseen(false);
+    window.addEventListener("crm-changelog-seen", on);
+    return () => window.removeEventListener("crm-changelog-seen", on);
+  }, []);
+  return unseen;
+}
+
 /** Pinned to the bottom of the sidebar, below the sections list. */
 const FOOT_ITEMS: { id: NavId; label: string; to: string }[] = [
   { id: "achievements", label: "Достижения", to: "/achievements" },
-  { id: "archive", label: "Архив", to: "/archive" },
+  { id: "changelog", label: "История", to: "/changelog" },
   { id: "settings", label: "Настройки", to: "/settings" },
 ];
 
 export function Sidebar({ active, search }: { active: NavId; search?: ShellSearch }) {
   const todayOpen = useTodayOpen();
   const navItems = useNavItems();
+  const unseen = useUnseenChangelog();
   return (
     <aside
       data-lab-block="nav"
@@ -181,7 +204,7 @@ export function Sidebar({ active, search }: { active: NavId; search?: ShellSearc
       </nav>
       <div className="mt-auto flex flex-col gap-1 pt-5">
         {FOOT_ITEMS.map((n) => (
-          <SideItem key={n.id} icon={NAV_ICON[n.id]} label={n.label} to={n.to} active={active === n.id} />
+          <SideItem key={n.id} icon={NAV_ICON[n.id]} label={n.label} to={n.to} active={active === n.id} dot={n.id === "changelog" && unseen} />
         ))}
       </div>
     </aside>

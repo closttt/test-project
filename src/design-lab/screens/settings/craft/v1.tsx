@@ -93,7 +93,7 @@ export default function SettingsSections() {
                 type="button"
                 disabled={!has}
                 onClick={() => go(g.id)}
-                className={`flex items-center gap-3 px-3 text-left transition-colors duration-150 disabled:opacity-35 ${on ? "" : "hover:bg-[#1E1E22]"}`}
+                className={`flex items-center gap-3 px-3 text-left transition-colors duration-150 disabled:opacity-35 ${on ? "" : "hover:bg-[#19191C]"}`}
                 style={{ height: 44, borderRadius: R.small, background: on ? "rgba(10,132,255,0.14)" : undefined, color: on ? C.text : C.text2, fontSize: 14 }}
               >
                 <Icon size={16} strokeWidth={1.75} color={on ? C.accent : C.text2} />

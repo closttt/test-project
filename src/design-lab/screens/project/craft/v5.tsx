@@ -138,7 +138,7 @@ function Banner({ m, onEdit, onBack }: { m: ProjectModel; onEdit: () => void; on
       onMouseLeave={() => setHover(false)}
       style={{
         borderRadius: R.card,
-        background: "radial-gradient(38% 90% at 14% 64%, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 70%), linear-gradient(180deg, #ECEDF0 0%, #DCDEE3 100%)",
+        background: "linear-gradient(180deg, #ECEDF0 0%, #DCDEE3 100%)",
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
       }}
     >
@@ -246,7 +246,7 @@ function Toc({ m }: { m: ProjectModel }) {
     <button
       type="button"
       onClick={() => go(id)}
-      className="flex w-full items-center justify-between gap-3 px-3 text-left transition-colors duration-150 hover:bg-[#1B1B1F]"
+      className="flex w-full items-center justify-between gap-3 px-3 text-left transition-colors duration-150 hover:bg-[#161619]"
       style={{ minHeight: 36, borderRadius: R.small }}
     >
       <span className="truncate" style={{ ...T.body, color: muted ? C.text3 : C.text2 }}>
@@ -273,7 +273,7 @@ function Toc({ m }: { m: ProjectModel }) {
           <span>Готовность</span>
           <span style={{ ...T.num, color: C.text }}>{Math.round(m.pct)}%</span>
         </div>
-        <div style={{ height: 6, borderRadius: 999, background: "#2C2C33" }}>
+        <div style={{ height: 6, borderRadius: 999, background: "#25252B" }}>
           <div style={{ width: `${m.pct}%`, height: "100%", borderRadius: 999, background: C.accent }} />
         </div>
         <button

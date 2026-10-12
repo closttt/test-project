@@ -3,17 +3,16 @@
  * store actions as pages/Tasks.tsx), the list row (draggable onto a day of the week board), quick
  * add, pill tabs and the task editor (the main screen's TaskEditor, extended with tags and subtasks).
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type SyntheticEvent } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, Check, Plus, Trash2, X } from "lucide-react";
+import { ArrowUpRight, Check, Clock3, FolderKanban, ListChecks, Plus, Trash2, X } from "lucide-react";
 
-import { Btn, C, IconBtn, R, T, TONE, dashed, font } from "@/design-lab/screens/_kit/craft";
+import { Btn, C, IconBtn, PRIO_TONE, R, T, TONE, dashed } from "@/design-lab/screens/_kit/craft";
+import { CalendarPanel, DatePicker, Floating, Select, TagChips, TagInput, metaChip } from "@/design-lab/screens/_kit/controls";
 import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
-import { addDays, dueLabel, formatDate, isOverdue, isToday, isUpcoming, todayStr } from "@/lib/format";
+import { addDays, dueLabel, formatDate, formatDuration, isOverdue, isToday, isUpcoming, todayStr } from "@/lib/format";
 import { isSnoozed } from "@/lib/taskGrouping";
-import { weekStart } from "@/lib/weekBoard";
 import { blockingTasks } from "@/lib/dependencies";
 import { parseNaturalInput } from "@/lib/nlp";
 import { pushUndo } from "@/lib/undoStack";
@@ -98,6 +97,13 @@ export function useTasksModel() {
   const [justAdded, setJustAdded] = useState<string[]>([]);
 
   const projectName = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
+
+  /** Every tag in use, most used first, with the fixed pair always offered. */
+  const allTags = useMemo(() => {
+    const n = new Map<string, number>(FIXED_TAGS.map((t) => [t, 0]));
+    for (const t of tasks) for (const tag of t.tags) n.set(tag, (n.get(tag) ?? 0) + 1);
+    return [...n.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru")).map(([t]) => t);
+  }, [tasks]);
 
   const counts = useMemo(() => {
     const c = {} as Record<SmartList, number>;
@@ -197,7 +203,7 @@ export function useTasksModel() {
     },
   };
 
-  return { tasks, projects, projectName, counts, filter, freshFirst, goal, closedToday, weekStartsMonday: settings.weekStartsMonday, actions };
+  return { tasks, projects, projectName, allTags, counts, filter, freshFirst, goal, closedToday, weekStartsMonday: settings.weekStartsMonday, actions };
 }
 
 export type TasksModel = ReturnType<typeof useTasksModel>;
@@ -225,7 +231,7 @@ export function ListTabs<K extends string>({
             key={it.key}
             type="button"
             onClick={() => onChange(it.key)}
-            className={`inline-flex items-center gap-2 whitespace-nowrap px-4 transition-colors duration-150 ${on ? "" : "hover:bg-[#1B1B1F]"}`}
+            className={`inline-flex items-center gap-2 whitespace-nowrap px-4 transition-colors duration-150 ${on ? "" : "hover:bg-[#161619]"}`}
             style={{ height: size, borderRadius: 999, background: on ? tint : "transparent", color: on ? C.text : C.text2, fontSize: 14 }}
           >
             {it.label}
@@ -302,7 +308,7 @@ function TrashBtn({ onClick, size = 32 }: { onClick: () => void; size?: number }
         e.stopPropagation();
         onClick();
       }}
-      className="grid shrink-0 place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF7A73] focus-visible:opacity-100 group-hover:opacity-100"
+      className="grid shrink-0 place-items-center rounded-full opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#2A1A1A] hover:text-[#FF6B63] focus-visible:opacity-100 group-hover:opacity-100"
       style={{ width: size, height: size, color: C.text3 }}
     >
       <Trash2 size={16} strokeWidth={1.75} />
@@ -310,12 +316,64 @@ function TrashBtn({ onClick, size = 32 }: { onClick: () => void; size?: number }
   );
 }
 
-function PrioDot({ p, size = 6 }: { p: number; size?: number }) {
+/** Priority as its own tinted chip in the priority hue (red / amber / blue); nothing for «без приоритета». */
+export function PrioChip({ p }: { p: number }) {
   if (!p) return null;
-  return <span className="shrink-0" style={{ width: size, height: size, borderRadius: 9, background: PRIO_DOT[p] }} />;
+  const tone = TONE[PRIO_TONE[p]];
+  return (
+    <span className="inline-flex shrink-0 items-center" style={{ ...metaChip, background: tone.bg, color: tone.fg }}>
+      {PRIO_LABEL[p]}
+    </span>
+  );
 }
 
-/** The main screen's task line: check · dot · title · project · subtasks … date · trash. */
+/** Project as a muted chip with the folder glyph; click opens the project. `on` = the surface below. */
+export function ProjectChip({ id, name, on = "card", onNavigate }: { id: string; name: string; on?: "card" | "raise"; onNavigate?: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      title={`Открыть проект «${name}»`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onNavigate?.();
+        navigate(`/projects/${id}`);
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="inline-flex min-w-0 shrink items-center gap-1 transition-colors hover:text-[#F4F5F7]"
+      style={{ ...metaChip, maxWidth: 170, background: on === "raise" ? C.line2 : C.raise, color: C.text2 }}
+    >
+      <FolderKanban size={12} strokeWidth={1.75} className="shrink-0" />
+      <span className="truncate">{name}</span>
+    </button>
+  );
+}
+
+/** Subtasks done/total with the list glyph. */
+export function SubCount({ t }: { t: Task }) {
+  if (!t.subtasks.length) return null;
+  const done = t.subtasks.filter((s) => s.done).length;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1" style={{ ...T.num, fontWeight: 400, fontSize: 12, color: done === t.subtasks.length ? TONE.green.fg : C.text3 }}>
+      <ListChecks size={13} strokeWidth={1.75} />
+      {done}/{t.subtasks.length}
+    </span>
+  );
+}
+
+/** Tracked time (or the estimate, «~») with the clock glyph. */
+export function TimeMeta({ t }: { t: Task }) {
+  const v = t.spentMin > 0 ? formatDuration(t.spentMin) : t.estimateMin ? `~${formatDuration(t.estimateMin)}` : "";
+  if (!v) return null;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1" style={{ ...T.num, fontWeight: 400, fontSize: 12, color: C.text3 }}>
+      <Clock3 size={13} strokeWidth={1.75} />
+      {v}
+    </span>
+  );
+}
+
+/** The list row — same information as the card: check · title · priority · project · tags · subtasks · time … date · trash. */
 export function TaskLine({
   t,
   m,
@@ -323,7 +381,7 @@ export function TaskLine({
   active,
   showProject = true,
   pad = 24,
-  height = 56,
+  height = 60,
 }: {
   t: Task;
   m: TasksModel;
@@ -334,9 +392,7 @@ export function TaskLine({
   height?: number;
 }) {
   const { text, late } = dueText(t);
-  const subDone = t.subtasks.filter((s) => s.done).length;
   const pname = t.projectId ? m.projectName.get(t.projectId) : undefined;
-  const navigate = useNavigate();
   return (
     <div
       role="button"
@@ -348,7 +404,7 @@ export function TaskLine({
         e.dataTransfer.setData("text/plain", t.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      className="group grid cursor-pointer items-center gap-4 outline-none transition-colors duration-150 hover:bg-[#1C1C20] focus-visible:bg-[#1C1C20]"
+      className="group grid cursor-pointer items-center gap-4 outline-none transition-colors duration-150 hover:bg-[#17171A] focus-visible:bg-[#17171A]"
       style={{
         gridTemplateColumns: "22px minmax(0,1fr) auto 32px",
         minHeight: height,
@@ -360,33 +416,25 @@ export function TaskLine({
     >
       <RoundCheckBtn done={t.done} onChange={() => m.actions.toggle(t)} />
       <div className="flex min-w-0 items-center gap-2">
-        <PrioDot p={t.priority} />
         <span
-          className="truncate"
-          style={{ ...T.cell, fontSize: 15, color: t.done ? C.text3 : C.text, textDecorationLine: t.done ? "line-through" : "none", textDecorationColor: C.text3 }}
+          className="min-w-0 truncate"
+          style={{ ...T.cell, minWidth: 96, color: t.done ? C.text3 : C.text, textDecorationLine: t.done ? "line-through" : "none", textDecorationColor: C.text3 }}
         >
           {t.title}
         </span>
-        {showProject && pname && (
-          <button
-            type="button"
-            title={`Открыть проект «${pname}»`}
-            onClick={(e) => {
-              e.stopPropagation();
-              navigate(`/projects/${t.projectId}`);
-            }}
-            onKeyDown={(e) => e.stopPropagation()}
-            className="shrink-0 truncate text-left transition-colors hover:text-[#9A9CA3]"
-            style={{ ...T.body, color: C.text3, maxWidth: 180 }}
-          >
-            · {pname}
-          </button>
-        )}
-        {t.subtasks.length > 0 && (
-          <span className="shrink-0" style={{ ...T.foot, ...T.num, fontWeight: 400, color: C.text3 }}>
-            {subDone}/{t.subtasks.length}
+        <PrioChip p={t.priority} />
+        {showProject && pname && t.projectId && (
+          <span className="hidden min-w-0 shrink sm:inline-flex">
+            <ProjectChip id={t.projectId} name={pname} />
           </span>
         )}
+        <span className="hidden min-w-0 shrink md:inline-flex">
+          <TagChips tags={t.tags} />
+        </span>
+        <SubCount t={t} />
+        <span className="hidden lg:inline-flex">
+          <TimeMeta t={t} />
+        </span>
       </div>
       <span className="whitespace-nowrap text-right" style={{ ...T.body, color: late ? TONE.amber.fg : C.text3 }}>
         {text}
@@ -416,35 +464,10 @@ export function RoundCheckBtn({ done, onChange, size = 22 }: { done: boolean; on
 
 // ── Dates ─────────────────────────────────────────────────────────────────────────────────────
 
-/** Midnight-local Date for YYYY-MM-DD (never `new Date(str)`, which parses as UTC). */
-function fromDay(s: string): Date {
-  const [y, mo, d] = s.split("-").map(Number);
-  return new Date(y, (mo ?? 1) - 1, d ?? 1);
-}
-
-/** «пн, 13 окт.» */
-export function dayShort(s: string): string {
-  return fromDay(s).toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short" });
-}
-
-/** One-tap dates offered on cards and in the editor: today, tomorrow, start of next week. */
-export function quickDates(weekStartsMonday: boolean): { label: string; date: string }[] {
-  return [
-    { label: "Сегодня", date: todayStr() },
-    { label: "Завтра", date: addDays(new Date(), 1) },
-    { label: "След. неделя", date: weekStart(1, weekStartsMonday) },
-  ];
-}
-
-/** A native date input only commits a complete, plausible date (typing the year passes through «0002»…). */
-const validDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= "2000-01-01";
-
-const stop = (e: SyntheticEvent) => e.stopPropagation();
-
 /**
- * Small date popover anchored to a card's date chip: quick dates, «Без срока», and any date.
- * Portaled to <body> with fixed positioning so it never widens a narrow column or the page;
- * React events still bubble through the portal, so every handler stops them from reaching the card.
+ * Date popover anchored to a card's date chip: quick chips, «Без срока» and a month calendar.
+ * Kit `Floating`: portaled with fixed positioning so it never widens a narrow column or the page,
+ * and it stops React events so a pick doesn't also open the card underneath.
  */
 export function DatePop({
   anchor,
@@ -459,95 +482,19 @@ export function DatePop({
   onPick: (date: string | undefined) => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  const W = 240;
-  useLayoutEffect(() => {
-    const r = anchor.getBoundingClientRect();
-    const h = ref.current?.offsetHeight ?? 220;
-    const left = Math.min(Math.max(8, r.right - W), window.innerWidth - W - 8);
-    const below = r.bottom + 6 + h <= window.innerHeight - 8;
-    setPos({ left, top: below ? r.bottom + 6 : Math.max(8, r.top - 6 - h) });
-  }, [anchor]);
-  useEffect(() => {
-    const outside = (e: Event) => {
-      const t = e.target;
-      if (t instanceof Node && (ref.current?.contains(t) || anchor.contains(t))) return;
-      onClose();
-    };
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("mousedown", outside, true);
-    document.addEventListener("scroll", outside, true);
-    document.addEventListener("keydown", key);
-    window.addEventListener("resize", onClose);
-    return () => {
-      document.removeEventListener("mousedown", outside, true);
-      document.removeEventListener("scroll", outside, true);
-      document.removeEventListener("keydown", key);
-      window.removeEventListener("resize", onClose);
-    };
-  }, [anchor, onClose]);
-  const pick = (d: string | undefined) => {
-    onPick(d);
-    onClose();
-  };
-  const row = "flex w-full items-center justify-between gap-3 px-3 text-left transition-colors";
-  return createPortal(
-    <div
-      ref={ref}
-      role="dialog"
-      aria-label="Срок"
-      onClick={stop}
-      onMouseDown={stop}
-      onKeyDown={stop}
-      onDragStart={stop}
-      className="flex flex-col gap-0.5 p-1.5"
-      style={{
-        position: "fixed",
-        top: pos?.top ?? 0,
-        left: pos?.left ?? 0,
-        visibility: pos ? "visible" : "hidden",
-        zIndex: 60,
-        width: W,
-        background: C.panel,
-        borderRadius: R.inner,
-        boxShadow: `inset 0 0 0 1px ${C.line2}, 0 18px 50px rgba(0,0,0,0.55)`,
-        fontFamily: font,
-        color: C.text,
-      }}
-    >
-      {quickDates(weekStartsMonday).map((q) => {
-        const on = value === q.date;
-        return (
-          <button
-            key={q.label}
-            type="button"
-            onClick={() => pick(q.date)}
-            className={`${row} ${on ? "" : "hover:bg-[#1E1E22]"}`}
-            style={{ height: 36, borderRadius: 10, background: on ? tint : undefined, fontSize: 14 }}
-          >
-            <span>{q.label}</span>
-            <span style={{ ...T.foot, color: on ? "#5AA9FF" : C.text3 }}>{dayShort(q.date)}</span>
-          </button>
-        );
-      })}
-      {value && (
-        <button type="button" onClick={() => pick(undefined)} className={`${row} hover:bg-[#1E1E22]`} style={{ height: 36, borderRadius: 10, fontSize: 14, color: C.text2 }}>
-          Без срока
-        </button>
-      )}
-      <div className="mt-1 pt-1.5" style={dashed}>
-        <input
-          type="date"
-          aria-label="Выбрать дату"
-          defaultValue={value ?? ""}
-          onChange={(e) => validDay(e.target.value) && pick(e.target.value)}
-          className="w-full outline-none [color-scheme:dark]"
-          style={{ height: 40, borderRadius: 10, background: C.raise, padding: "0 12px", fontSize: 14, color: C.text }}
-        />
-      </div>
-    </div>,
-    document.body
+  const keyRef = useRef<((e: KeyboardEvent) => boolean | void) | null>(null);
+  return (
+    <Floating anchor={anchor} onClose={onClose} width={292} align="end" label="Срок" onKey={(e) => keyRef.current?.(e)}>
+      <CalendarPanel
+        value={value ?? ""}
+        weekStartsMonday={weekStartsMonday}
+        keyRef={keyRef}
+        onPick={(d) => {
+          onPick(d || undefined);
+          onClose();
+        }}
+      />
+    </Floating>
   );
 }
 
@@ -629,14 +576,6 @@ function TaskForm({
   };
   const subs = task ? task.subtasks : newSubs.map((s, i) => ({ id: String(i), title: s, done: false }));
   const subDone = subs.filter((s) => s.done).length;
-  const chip = (on: boolean): CSSProperties => ({
-    height: 32,
-    borderRadius: 999,
-    fontSize: 13,
-    background: on ? tint : "transparent",
-    boxShadow: on ? "none" : `inset 0 0 0 1px ${C.line}`,
-    color: on ? C.text : C.text2,
-  });
   return (
     <div className="flex flex-col gap-5">
       <input
@@ -656,27 +595,17 @@ function TaskForm({
         className="w-full resize-none bg-transparent outline-none placeholder:text-[#5E6068]"
         style={{ ...field, height: "auto", padding: "12px 14px", lineHeight: 1.45 }}
       />
-      <div className="flex flex-col gap-2">
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col">
-            <span style={labelStyle}>Срок</span>
-            <input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="outline-none [color-scheme:dark]" style={field} />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex min-w-0 flex-col">
+          <label htmlFor="task-form-due" style={labelStyle}>
+            Срок
           </label>
-          <label className="flex flex-col">
-            <span style={labelStyle}>Оценка, мин</span>
-            <input type="number" min={0} step={15} value={estimate} onChange={(e) => setEstimate(e.target.value)} placeholder="—" className="outline-none" style={field} />
-          </label>
+          <DatePicker id="task-form-due" value={due} onChange={setDue} weekStartsMonday={m.weekStartsMonday} surface={surface} />
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {quickDates(m.weekStartsMonday).map((q) => (
-            <button key={q.label} type="button" onClick={() => setDue(q.date)} className="whitespace-nowrap px-3 transition-colors" style={chip(due === q.date)}>
-              {q.label}
-            </button>
-          ))}
-          <button type="button" onClick={() => setDue("")} className="whitespace-nowrap px-3 transition-colors" style={chip(due === "")}>
-            Без срока
-          </button>
-        </div>
+        <label className="flex min-w-0 flex-col">
+          <span style={labelStyle}>Оценка, мин</span>
+          <input type="number" min={0} step={15} value={estimate} onChange={(e) => setEstimate(e.target.value)} placeholder="—" className="min-w-0 outline-none placeholder:text-[#5E6068]" style={field} />
+        </label>
       </div>
       <div className="flex flex-col">
         <span style={labelStyle}>Приоритет</span>
@@ -702,53 +631,38 @@ function TaskForm({
           ))}
         </div>
       </div>
-      <div className="grid gap-3" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
-        <div className="flex min-w-0 flex-col">
-          <div className="flex items-baseline justify-between gap-2" style={labelStyle}>
-            <label htmlFor="task-form-project">Проект</label>
-            {projectId && m.projectName.has(projectId) && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose?.();
-                  navigate(`/projects/${projectId}`);
-                }}
-                className="inline-flex items-center gap-1 transition-colors hover:text-[#F4F5F7]"
-                style={{ color: C.text2 }}
-              >
-                Открыть
-                <ArrowUpRight size={12} strokeWidth={1.75} />
-              </button>
-            )}
-          </div>
-          <select id="task-form-project" value={projectId} onChange={(e) => setProjectId(e.target.value)} className="outline-none [color-scheme:dark]" style={field}>
-            <option value="">Без проекта</option>
-            {m.projects.map((pr) => (
-              <option key={pr.id} value={pr.id}>
-                {pr.name}
-              </option>
-            ))}
-          </select>
+      <div className="flex min-w-0 flex-col">
+        <div className="flex items-baseline justify-between gap-2" style={labelStyle}>
+          <label htmlFor="task-form-project">Проект</label>
+          {projectId && m.projectName.has(projectId) && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose?.();
+                navigate(`/projects/${projectId}`);
+              }}
+              className="inline-flex items-center gap-1 transition-colors hover:text-[#F4F5F7]"
+              style={{ color: C.text2 }}
+            >
+              Открыть
+              <ArrowUpRight size={12} strokeWidth={1.75} />
+            </button>
+          )}
         </div>
-        <div className="flex flex-col">
-          <span style={labelStyle}>Теги</span>
-          <div className="flex gap-1.5" style={{ height: 44, alignItems: "center" }}>
-            {FIXED_TAGS.map((tag) => {
-              const on = tags.includes(tag);
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => setTags((xs) => (on ? xs.filter((x) => x !== tag) : [...xs, tag]))}
-                  className="whitespace-nowrap px-3.5 transition-colors"
-                  style={{ height: 36, borderRadius: 999, fontSize: 14, background: on ? tint : "transparent", boxShadow: on ? "none" : `inset 0 0 0 1px ${C.line}`, color: on ? C.text : C.text2 }}
-                >
-                  #{tag}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <Select
+          id="task-form-project"
+          ariaLabel="Проект"
+          value={projectId}
+          onChange={setProjectId}
+          surface={surface}
+          options={[{ value: "", label: "Без проекта" }, ...m.projects.map((pr) => ({ value: pr.id, label: pr.name }))]}
+        />
+      </div>
+      <div className="flex min-w-0 flex-col">
+        <label htmlFor="task-form-tags" style={labelStyle}>
+          Теги
+        </label>
+        <TagInput id="task-form-tags" value={tags} onChange={setTags} suggestions={m.allTags} surface={surface} />
       </div>
 
       <div className="flex flex-col">
@@ -775,7 +689,7 @@ function TaskForm({
                 type="button"
                 aria-label="Удалить подзадачу"
                 onClick={() => (task ? m.actions.deleteSub(task.id, s.id) : setNewSubs((xs) => xs.filter((_, j) => j !== i)))}
-                className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-opacity hover:text-[#FF7A73] focus-visible:opacity-100 group-hover:opacity-100"
+                className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-opacity hover:text-[#FF6B63] focus-visible:opacity-100 group-hover:opacity-100"
                 style={{ color: C.text3 }}
               >
                 <X size={14} strokeWidth={1.75} />
@@ -856,7 +770,7 @@ export function TaskEditor({ taskId, draft, m, onClose }: { taskId: string | nul
         data-lab-block="editor"
         aria-label={taskId ? "Задача" : "Новая задача"}
         className="flex w-full max-w-[580px] flex-col gap-5 p-6"
-        style={{ background: C.panel, borderRadius: R.page, boxShadow: `inset 0 0 0 1px ${C.line2}, 0 30px 80px rgba(0,0,0,0.6)` }}
+        style={{ background: C.panel, borderRadius: R.page, boxShadow: "0 30px 80px rgba(0,0,0,0.6)" }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">

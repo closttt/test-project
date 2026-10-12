@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { BookOpen, ChevronDown, Library, Link2, Pencil, Plus, Send, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, Library, Link2, Pencil, Plus, Search, Send, Trash2, X } from "lucide-react";
 
 import { Btn, C, CapsuleBars, R, Ring, SplitBar, T, dashed } from "@/design-lab/screens/_kit/craft";
 import { CraftShell } from "@/design-lab/screens/_kit/craftShell";
@@ -32,6 +32,7 @@ import {
   RowAct,
   Seg,
   SeenCheck,
+  Sheet,
   TINT,
   Thumb,
   clean,
@@ -63,7 +64,7 @@ function Tile({ area, children, className = "" }: { area: string; children: Reac
 
 function Head({ title, sub, right, icon }: { title: string; sub?: React.ReactNode; right?: React.ReactNode; icon?: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-3">
+    <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex min-w-0 items-start gap-2.5">
         {icon && <span className="mt-0.5 shrink-0" style={{ color: C.text2 }}>{icon}</span>}
         <div className="min-w-0">
@@ -78,7 +79,7 @@ function Head({ title, sub, right, icon }: { title: string; sub?: React.ReactNod
 
 function QueueCard({ k, i, onOpen }: { k: Knowledge; i: LibraryItem; onOpen: () => void }) {
   return (
-    <article role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen()} className="group flex w-[220px] shrink-0 cursor-pointer flex-col gap-3 outline-none">
+    <article role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen()} className="group flex w-full min-w-0 cursor-pointer flex-col gap-3 outline-none">
       <div className="relative">
         <Cover item={i} radius={16} loading={k.lib.pending.has(i.id)} />
         <span className="absolute left-2.5 top-2.5">
@@ -100,6 +101,99 @@ function QueueCard({ k, i, onOpen }: { k: Knowledge; i: LibraryItem; onOpen: () 
         </div>
       </div>
     </article>
+  );
+}
+
+const CARD_MIN = 200;
+const CARD_GAP = 16;
+
+/** As many cards as fit the tile's width — one clean row, no scrollbar; the rest is behind «Показать все». */
+function QueueRow({ k, list, onOpen }: { k: Knowledge; list: LibraryItem[]; onOpen: (i: LibraryItem) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(4);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setFit(Math.max(1, Math.floor((el.clientWidth + CARD_GAP) / (CARD_MIN + CARD_GAP))));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="mt-5 grid" style={{ gridTemplateColumns: `repeat(${fit}, minmax(0,1fr))`, columnGap: CARD_GAP }}>
+      {list.slice(0, fit).map((i, n) => (
+        <div key={i.id} data-lab-block={n === 0 ? "queue-card" : undefined} className="flex min-w-0">
+          <QueueCard k={k} i={i} onOpen={() => onOpen(i)} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** «Показать все»: the whole queue as a grid on one quiet sheet, same filter and search as the tile. */
+function QueueAll({
+  k,
+  tab,
+  setTab,
+  counts,
+  initialQuery,
+  onOpen,
+  onClose,
+}: {
+  k: Knowledge;
+  tab: "want" | "doing";
+  setTab: (t: "want" | "doing") => void;
+  counts: { want: number; doing: number };
+  initialQuery: string;
+  onOpen: (i: LibraryItem, list: LibraryItem[]) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState(initialQuery);
+  const q = query.trim().toLowerCase();
+  const list = k.lib.items.filter((i) => i.status === tab && matchLib(i, q));
+  return (
+    <Sheet label="Очередь чтения" onClose={onClose} width={1240}>
+      <div className="flex flex-wrap items-center gap-3 pl-5 pr-3 pt-4 sm:pl-8 sm:pr-4" style={{ minHeight: 56 }}>
+        <h2 className="mr-auto" style={T.title}>
+          Очередь чтения <span style={{ ...T.num, fontWeight: 400, color: C.text3 }}>{list.length}</span>
+        </h2>
+        <label className="flex w-[240px] max-w-full items-center gap-2 px-3" style={{ height: 36, borderRadius: 999, background: C.raise }}>
+          <Search size={15} strokeWidth={1.75} color={C.text3} className="shrink-0" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Поиск в очереди"
+            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[#5E6068]"
+            style={{ fontSize: 14, color: C.text }}
+          />
+        </label>
+        <Seg
+          value={tab}
+          onChange={setTab}
+          items={[
+            { id: "want", label: "Хочу", count: counts.want },
+            { id: "doing", label: "В процессе", count: counts.doing },
+          ]}
+        />
+        <RowAct title="Закрыть" onClick={onClose}>
+          <X size={18} strokeWidth={1.75} />
+        </RowAct>
+      </div>
+      <div className="kn-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-5 sm:px-8">
+        {list.length === 0 ? (
+          <div className="grid h-full place-items-center" style={{ ...T.body, color: C.text3 }}>
+            {q ? "Ничего не нашлось" : "Пусто"}
+          </div>
+        ) : (
+          <div className="grid gap-x-4 gap-y-7" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${CARD_MIN}px, 1fr))` }}>
+            {list.map((i) => (
+              <QueueCard key={i.id} k={k} i={i} onOpen={() => onOpen(i, list)} />
+            ))}
+          </div>
+        )}
+      </div>
+    </Sheet>
   );
 }
 
@@ -126,12 +220,16 @@ export default function KnowledgeOverview() {
   const tg = useTelegramInbox(k);
   const wide = useWide(1360);
   const mid = useWide(1280);
+  const phone = !useWide(760);
   const location = useLocation();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [queueTab, setQueueTab] = useState<"want" | "doing">("want");
   const [folder, setFolder] = useState<string | null>(null);
-  const [openLib, setOpenLib] = useState<string | null>(null);
+  /** The open material and the list it was opened from (← → flip through that list). */
+  const [openCtx, setOpenCtx] = useState<{ id: string; ids: string[] } | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const openItem = (i: LibraryItem, list: LibraryItem[]) => setOpenCtx({ id: i.id, ids: list.map((x) => x.id) });
   const [draft, setDraft] = useState<LibraryDraft | null>(null);
   const [openNote, setOpenNote] = useState<{ id: string; fresh?: boolean } | null>(null);
   const [section, setSection] = useState<string | null>(null);
@@ -155,7 +253,7 @@ export default function KnowledgeOverview() {
       if (title && !d.url) d.title = title;
       setDraft(d);
     }
-    if (st.openLibraryId) setOpenLib(st.openLibraryId);
+    if (st.openLibraryId) setOpenCtx({ id: st.openLibraryId, ids: [st.openLibraryId] });
     if (st.tab) {
       const block = st.tab === "library" ? "queue" : st.tab;
       requestAnimationFrame(() => document.querySelector(`[data-lab-block="${block}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -174,10 +272,22 @@ export default function KnowledgeOverview() {
   const pace = useMemo(() => weekly([...items.map((i) => i.createdAt), ...k.vault.notes.map((n) => n.createdAt), ...k.links.shelf.links.map((l) => l.createdAt)]), [items, k.vault.notes, k.links.shelf.links]);
   const month = pace.slice(-4).reduce((s, d) => s + d.value, 0);
 
-  const opened = openLib ? items.find((i) => i.id === openLib) : undefined;
+  const opened = openCtx ? items.find((i) => i.id === openCtx.id) : undefined;
+  const seq = openCtx ? openCtx.ids.filter((id) => items.some((i) => i.id === id)) : [];
+  const at = opened ? seq.indexOf(opened.id) : -1;
+  const nav =
+    opened && openCtx && seq.length > 1 && at >= 0
+      ? {
+          label: `${at + 1} / ${seq.length}`,
+          onPrev: at > 0 ? () => setOpenCtx({ ...openCtx, id: seq[at - 1] }) : undefined,
+          onNext: at < seq.length - 1 ? () => setOpenCtx({ ...openCtx, id: seq[at + 1] }) : undefined,
+        }
+      : undefined;
   const newNote = () => setOpenNote({ id: k.vault.create("note", folder, "", { draft: true }).id, fresh: true });
 
-  const grid = wide
+  const grid = phone
+    ? { gridTemplateColumns: "minmax(0,1fr)", gridTemplateAreas: `"queue" "notes" "done" "links" "pace"` }
+    : wide
     ? { gridTemplateColumns: "minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr)", gridTemplateAreas: `"queue queue pace" "notes notes done" "notes notes links"` }
     : { gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gridTemplateAreas: `"queue queue" "notes notes" "done links" "pace pace"` };
 
@@ -237,7 +347,7 @@ export default function KnowledgeOverview() {
             title="Очередь чтения"
             sub={`${queue.length} ${plural(queue.length, "материал", "материала", "материалов")}`}
             right={
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 {tg.count > 0 && (
                   <Pill size={36} onClick={tg.takeAll} icon={<Send size={14} strokeWidth={1.75} />} count={tg.count}>
                     Из Telegram
@@ -251,13 +361,18 @@ export default function KnowledgeOverview() {
                     { id: "doing", label: "В процессе", count: stats.doing },
                   ]}
                 />
+                {queue.length > 0 && (
+                  <Pill size={36} onClick={() => setShowAll(true)} count={queue.length}>
+                    Показать все
+                  </Pill>
+                )}
               </div>
             }
           />
           {k.lib.loading ? (
-            <div className="-mx-6 mt-5 flex gap-4 overflow-hidden px-6 pb-2">
+            <div className="mt-5 flex gap-4 overflow-hidden">
               {[0, 1, 2, 3].map((n) => (
-                <div key={n} className="w-[220px] shrink-0 animate-pulse" style={{ aspectRatio: "16 / 10", borderRadius: 16, background: C.raise }} />
+                <div key={n} className="min-w-[200px] flex-1 animate-pulse" style={{ aspectRatio: "16 / 10", borderRadius: 16, background: C.raise }} />
               ))}
             </div>
           ) : queue.length === 0 ? (
@@ -265,13 +380,7 @@ export default function KnowledgeOverview() {
               {q ? "Ничего не нашлось" : "Пусто"}
             </div>
           ) : (
-            <div className="kn-scroll -mx-6 mt-5 flex gap-4 overflow-x-auto px-6 pb-2">
-              {queue.map((i, n) => (
-                <div key={i.id} data-lab-block={n === 0 ? "queue-card" : undefined} className="flex shrink-0">
-                  <QueueCard k={k} i={i} onOpen={() => setOpenLib(i.id)} />
-                </div>
-              ))}
-            </div>
+            <QueueRow k={k} list={queue} onOpen={(i) => openItem(i, queue)} />
           )}
         </Tile>
 
@@ -294,7 +403,7 @@ export default function KnowledgeOverview() {
         </Tile>
 
         <Tile area="notes">
-          <VaultPanel k={k} folder={folder} setFolder={setFolder} globalQuery={q} compact={!mid} onOpenNote={(id, fresh) => setOpenNote({ id, fresh })} />
+          <VaultPanel k={k} folder={folder} setFolder={setFolder} globalQuery={q} compact={!mid} stacked={phone} onOpenNote={(id, fresh) => setOpenNote({ id, fresh })} />
         </Tile>
 
         <Tile area="done" className="!pb-3">
@@ -310,9 +419,9 @@ export default function KnowledgeOverview() {
                   key={i.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setOpenLib(i.id)}
-                  onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && setOpenLib(i.id)}
-                  className="group -mx-3 flex cursor-pointer items-center gap-3 px-3 py-2.5 outline-none transition-colors hover:bg-[#1C1C20]"
+                  onClick={() => openItem(i, closed)}
+                  onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && openItem(i, closed)}
+                  className="group -mx-3 flex cursor-pointer items-center gap-3 px-3 py-2.5 outline-none transition-colors hover:bg-[#17171A]"
                   style={dashed}
                 >
                   <SeenCheck item={i} onToggle={() => toggleSeen(k.lib, i)} />
@@ -358,7 +467,7 @@ export default function KnowledgeOverview() {
               const real = s.id ? k.links.sections.find((x) => x.id === s.id) : undefined;
               return (
                 <div key={s.id ?? "none"} style={dashed}>
-                  <div className="group -mx-3 flex items-center transition-colors hover:bg-[#1C1C20]" style={{ background: on ? TINT : undefined }}>
+                  <div className="group -mx-3 flex items-center transition-colors hover:bg-[#17171A]" style={{ background: on ? TINT : undefined }}>
                     <button type="button" onClick={() => setSection(on ? null : s.id)} className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left">
                       {ls[0] ? (
                         <Favicon domain={ls[0].domain} size={28} radius={8} />
@@ -396,7 +505,7 @@ export default function KnowledgeOverview() {
                         </span>
                       ) : (
                         ls.map((l) => (
-                          <div key={l.id} className="group flex items-center gap-1 pr-1 transition-colors hover:bg-[#1E1E22]" style={{ borderRadius: 10 }}>
+                          <div key={l.id} className="group flex items-center gap-1 pr-1 transition-colors hover:bg-[#19191C]" style={{ borderRadius: 10 }}>
                             <a href={l.url} target="_blank" rel="noreferrer" className="flex min-w-0 flex-1 items-center gap-2.5 px-2 py-1.5">
                               <Favicon domain={l.domain} size={20} radius={5} />
                               <span className="min-w-0 flex-1 truncate" style={{ ...T.body, color: C.text2 }}>
@@ -451,7 +560,8 @@ export default function KnowledgeOverview() {
           onClose={() => setSectionDel(null)}
         />
       )}
-      {opened && <LibraryView key={opened.id} k={k} item={opened} onClose={() => setOpenLib(null)} />}
+      {showAll && <QueueAll k={k} tab={queueTab} setTab={setQueueTab} counts={stats} initialQuery={query} onOpen={openItem} onClose={() => setShowAll(false)} />}
+      {opened && <LibraryView key={opened.id} k={k} item={opened} nav={nav} onClose={() => setOpenCtx(null)} />}
       {draft && <LibraryEditor k={k} draft={draft} onClose={() => setDraft(null)} />}
       {openNote && (
         <NoteDialog

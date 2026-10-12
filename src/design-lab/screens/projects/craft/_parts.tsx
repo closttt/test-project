@@ -262,7 +262,7 @@ export function StatusTabs({ s, size = 40, compact }: { s: ProjectsScreen; size?
             key={f}
             type="button"
             onClick={() => s.setFilter(f)}
-            className={`inline-flex items-center gap-2 whitespace-nowrap transition-colors duration-150 ${on ? "" : "hover:bg-[#1B1B1F]"}`}
+            className={`inline-flex items-center gap-2 whitespace-nowrap transition-colors duration-150 ${on ? "" : "hover:bg-[#161619]"}`}
             style={{ height: size, padding: compact ? "0 12px" : "0 16px", borderRadius: 999, background: on ? SOFT : "transparent", color: on ? C.text : C.text2, fontSize: 14 }}
           >
             {FILTER_LABEL[f]}
@@ -285,7 +285,7 @@ export function SortMenu({ s, size = 40 }: { s: ProjectsScreen; size?: number })
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 whitespace-nowrap px-4 transition-colors duration-150 hover:bg-[#232327]"
+        className="flex items-center gap-2 whitespace-nowrap px-4 transition-colors duration-150 hover:bg-[#1D1D21]"
         style={{ height: size, borderRadius: 999, background: open ? C.line : C.raise, fontSize: 14, color: C.text }}
       >
         <ArrowDownUp size={15} strokeWidth={1.75} color={C.text2} />
@@ -305,7 +305,7 @@ export function SortMenu({ s, size = 40 }: { s: ProjectsScreen; size?: number })
                 s.setSort(x.id);
                 setOpen(false);
               }}
-              className="flex items-center justify-between px-3 text-left transition-colors hover:bg-[#1B1B1F]"
+              className="flex items-center justify-between px-3 text-left transition-colors hover:bg-[#161619]"
               style={{ height: 40, borderRadius: R.small, fontSize: 14, color: s.sort === x.id ? C.text : C.text2, background: s.sort === x.id ? SOFT : undefined }}
             >
               {x.label}
@@ -372,7 +372,7 @@ export function ProjectMark({ p, size = 40 }: { p: Project; size?: number }) {
 /** Thin progress capsule. */
 export function Bar({ pct, width = "100%", height = 6 }: { pct: number; width?: number | string; height?: number }) {
   return (
-    <span className="block overflow-hidden" style={{ width, height, borderRadius: 99, background: "#26262C" }}>
+    <span className="block overflow-hidden" style={{ width, height, borderRadius: 99, background: "#202025" }}>
       <span className="block h-full" style={{ width: `${Math.max(pct > 0 ? 4 : 0, Math.min(100, pct))}%`, borderRadius: 99, background: C.accent }} />
     </span>
   );
@@ -383,10 +383,10 @@ export function RowActions({ r, s, className = "" }: { r: ProjectRow; s: Project
   const btn = "grid h-8 w-8 place-items-center rounded-full transition-[background,color] duration-150";
   return (
     <span className={`flex items-center gap-0.5 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100 ${className}`}>
-      <button type="button" title="В архив" aria-label="В архив" onClick={(e) => (e.stopPropagation(), s.archive(r))} className={`${btn} hover:bg-[#232327] hover:text-[#F4F5F7]`} style={{ color: C.text3 }}>
+      <button type="button" title="В архив" aria-label="В архив" onClick={(e) => (e.stopPropagation(), s.archive(r))} className={`${btn} hover:bg-[#1D1D21] hover:text-[#F4F5F7]`} style={{ color: C.text3 }}>
         <Archive size={16} strokeWidth={1.75} />
       </button>
-      <button type="button" title="Удалить проект" aria-label="Удалить проект" onClick={(e) => (e.stopPropagation(), s.remove(r.project))} className={`${btn} hover:bg-[#2A1A1A] hover:text-[#FF7A73]`} style={{ color: C.text3 }}>
+      <button type="button" title="Удалить проект" aria-label="Удалить проект" onClick={(e) => (e.stopPropagation(), s.remove(r.project))} className={`${btn} hover:bg-[#2A1A1A] hover:text-[#FF6B63]`} style={{ color: C.text3 }}>
         <Trash2 size={16} strokeWidth={1.75} />
       </button>
     </span>
@@ -463,7 +463,7 @@ export function PriorityPick({ p, onChange }: { p: Priority; onChange: (p: Prior
                 onChange(pr);
                 setOpen(false);
               }}
-              className="flex items-center gap-2.5 px-3 text-left transition-colors hover:bg-[#1B1B1F]"
+              className="flex items-center gap-2.5 px-3 text-left transition-colors hover:bg-[#161619]"
               style={{ height: 38, borderRadius: R.small, fontSize: 14, color: pr === p ? C.text : C.text2, background: pr === p ? SOFT : undefined }}
             >
               <span style={{ width: 6, height: 6, borderRadius: 9, background: PRIO_DOT[pr] }} />
@@ -525,7 +525,7 @@ function UndoBar({ text, onUndo, onClose }: { text: string; onUndo: () => void; 
       <Btn size={40} onClick={onUndo}>
         Вернуть
       </Btn>
-      <button type="button" aria-label="Закрыть" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#2A2A30]" style={{ color: C.text3 }}>
+      <button type="button" aria-label="Закрыть" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#242429]" style={{ color: C.text3 }}>
         <X size={15} strokeWidth={1.75} />
       </button>
     </div>

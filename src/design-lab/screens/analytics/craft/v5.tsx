@@ -214,7 +214,7 @@ function Done({ m, onAll, onEdit }: { m: MonthModel; onAll: () => void; onEdit: 
               key={t.id}
               type="button"
               onClick={() => onEdit(t.id)}
-              className="flex w-full items-center gap-3 px-6 text-left transition-colors duration-150 hover:bg-[#1C1C20]"
+              className="flex w-full items-center gap-3 px-6 text-left transition-colors duration-150 hover:bg-[#17171A]"
               style={{ minHeight: 44, ...dashed }}
             >
               <span className="shrink-0" style={{ width: 6, height: 6, borderRadius: 9, background: t.priority === 1 ? C.red : t.priority === 2 ? C.amber : t.priority === 3 ? C.accent : "#4A4C54" }} />
@@ -246,7 +246,7 @@ function BestDays({ m, onDay }: { m: MonthModel; onDay: (key: string) => void })
           <div style={{ ...T.body, color: C.text3 }}>Здесь появятся самые плотные дни месяца</div>
         ) : (
           best.map((d, i) => (
-            <button key={d.key} type="button" onClick={() => onDay(d.key)} className="flex flex-col gap-2 p-3.5 text-left transition-colors duration-150 hover:bg-[#26262C]" style={{ borderRadius: R.inner, background: C.raise }}>
+            <button key={d.key} type="button" onClick={() => onDay(d.key)} className="flex flex-col gap-2 p-3.5 text-left transition-colors duration-150 hover:bg-[#202025]" style={{ borderRadius: R.inner, background: C.raise }}>
               <div className="flex items-baseline justify-between gap-3">
                 <span style={{ ...T.body, color: C.text }}>{fmtDay(d.date, { day: "numeric", month: "long", weekday: "short" })}</span>
                 <span style={{ ...T.num, fontSize: 18, color: i === 0 ? "#5AA9FF" : C.text }}>{d.closed}</span>
