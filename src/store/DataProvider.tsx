@@ -211,8 +211,21 @@ function advanceDate(dateStr: string, rec: Exclude<Recurrence, "none">): string 
   return localDayStr(d);
 }
 
-export function DataProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(() => loadData() ?? seedData());
+export function DataProvider({
+  children,
+  sandboxData,
+}: {
+  children: ReactNode;
+  /**
+   * Design-lab only (design-lab-frame.html): start from this snapshot and keep every change in
+   * memory — nothing is written to localStorage and the cloud mirror is never touched.
+   */
+  sandboxData?: AppData;
+}) {
+  const sandbox = useRef(!!sandboxData).current;
+  const [data, setData] = useState<AppData>(() =>
+    sandboxData ? migrate(sandboxData) : loadData() ?? seedData()
+  );
   // Always the latest state, readable from async callbacks (cloud sync) without re-subscribing.
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -222,14 +235,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const saverRef = useRef(createDebouncedSaver());
 
   useEffect(() => {
+    if (sandbox) return;
     saverRef.current.schedule(data);
-  }, [data]);
+  }, [data, sandbox]);
 
   // A debounced write still in flight when the tab is closed/hidden/backgrounded would silently
   // drop the user's last edit — flush immediately on every signal that the page might not get
   // another tick. pagehide (not just beforeunload) also covers mobile Safari's bfcache path and
   // simple tab switches; visibilitychange:hidden covers backgrounding without a full unload.
   useEffect(() => {
+    if (sandbox) return;
     const flush = () => saverRef.current.flush();
     const onVisibility = () => { if (document.visibilityState === "hidden") flush(); };
     document.addEventListener("visibilitychange", onVisibility);
@@ -249,7 +264,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
    * and unconditionally, so a cloud outage or a missing table costs the user nothing.
    */
   const [sync, setSync] = useState<CloudSyncStatus>(() =>
-    cloudSyncEnabled() ? { state: "idle" } : { state: "off" }
+    !sandbox && cloudSyncEnabled() ? { state: "idle" } : { state: "off" }
   );
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Set once the first pull has settled — until then we must not push and clobber the cloud. */
@@ -259,7 +274,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Boot: reconcile with the cloud once.
   useEffect(() => {
-    if (!cloudSyncEnabled()) return;
+    if (sandbox || !cloudSyncEnabled()) return;
     let cancelled = false;
     setSync({ state: "syncing" });
     (async () => {
@@ -303,7 +318,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Mirror every change up, debounced well behind the local save so typing doesn't spam the API.
   useEffect(() => {
-    if (!cloudSyncEnabled() || !pulled.current) return;
+    if (sandbox || !cloudSyncEnabled() || !pulled.current) return;
     // A conflict is unresolved until the user picks a side — pushing would resolve it by force.
     if (sync.state === "conflict") return;
     dirty.current = true;
@@ -343,7 +358,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
    * there are unpushed local edits — adopting the cloud then would throw them away.
    */
   useEffect(() => {
-    if (!cloudSyncEnabled()) return;
+    if (sandbox || !cloudSyncEnabled()) return;
     const refresh = () => {
       if (document.visibilityState !== "visible") return;
       if (!pulled.current || dirty.current) return;

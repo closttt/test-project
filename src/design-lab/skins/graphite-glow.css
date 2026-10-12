@@ -1,0 +1,168 @@
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+   Graphite Glow — the chosen direction (A «Graphite Frame» × C «Soft Panels»).
+   Monochrome chrome, colour only for meaning (status / priority / charts), depth from three
+   surface steps + hairlines, and LIGHT instead of shadow: a soft top-left sheen on surfaces,
+   a top hairline highlight, and a quiet glow on the few things that matter (primary action,
+   active nav, live status).
+   This file is the shared base every screen variant builds on.
+   ───────────────────────────────────────────────────────────────────────────────────────────── */
+
+:root,
+.dark {
+  /* Surfaces: canvas → panel → card → raised. Neutral, no hue. */
+  --background: 0 0% 3.1%; /* #080808 canvas */
+  --card: 0 0% 6.7%; /* #111111 */
+  --card-foreground: 0 0% 96%;
+  --popover: 0 0% 8.2%; /* #151515 */
+  --popover-foreground: 0 0% 96%;
+  --secondary: 0 0% 10.2%; /* #1a1a1a */
+  --secondary-foreground: 0 0% 96%;
+  --muted: 0 0% 10.2%;
+  --muted-foreground: 0 0% 54%;
+  --accent: 0 0% 11.8%; /* hover fill */
+  --accent-foreground: 0 0% 98%;
+  --foreground: 0 0% 95%;
+  --primary: 0 0% 96%;
+  --primary-foreground: 0 0% 5%;
+  --border: 0 0% 12.2%; /* #1f1f1f */
+  --input: 0 0% 14.5%;
+  --radius: 0.875rem;
+
+  /* Meaning colours — slightly softened so they glow instead of shout. */
+  --success: 150 52% 50%;
+  --risk: 3 74% 62%;
+  --destructive: 3 64% 52%;
+
+  /* Light, not shadow. */
+  --gg-hairline: rgb(255 255 255 / 0.07);
+  --gg-hairline-strong: rgb(255 255 255 / 0.11);
+  --gg-top-light: inset 0 1px 0 0 rgb(255 255 255 / 0.05);
+  --gg-sheen: radial-gradient(120% 80% at 0% 0%, rgb(255 255 255 / 0.035), transparent 55%);
+  --gg-glow-white: 0 0 0 1px rgb(255 255 255 / 0.1), 0 8px 28px -8px rgb(255 255 255 / 0.35);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.55);
+  --shadow-lg: 0 18px 50px -12px rgb(0 0 0 / 0.75);
+}
+
+/* Monochrome chrome: the runtime accent (set inline from Settings) becomes silver here. */
+html {
+  --brand: 0 0% 90% !important;
+  --brand-foreground: 0 0% 6% !important;
+  --ring: 0 0% 55% !important;
+}
+
+body {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-feature-settings: "cv11", "ss01", "calt";
+  font-optical-sizing: auto;
+  letter-spacing: -0.006em;
+}
+h1, h2, h3, .text-2xl, .text-xl, .text-lg { letter-spacing: -0.022em; }
+.tabular-nums, [data-ui="stat-value"] { font-variant-numeric: tabular-nums; }
+
+/* ── Surfaces ─────────────────────────────────────────────────────────────────────────────── */
+[data-ui="card"],
+[data-ui="stat"] {
+  background-image: var(--gg-sheen);
+  border-color: var(--gg-hairline);
+  box-shadow: var(--gg-top-light);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────────────────────── */
+[data-ui="button"][data-variant="default"],
+[data-ui="button"][data-variant="brand"] {
+  background: hsl(0 0% 96%);
+  color: hsl(0 0% 6%);
+  box-shadow: var(--gg-glow-white);
+}
+[data-ui="button"][data-variant="default"]:hover,
+[data-ui="button"][data-variant="brand"]:hover {
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), 0 10px 34px -8px rgb(255 255 255 / 0.45);
+}
+[data-ui="button"][data-variant="outline"] {
+  border-color: var(--gg-hairline-strong);
+  background: rgb(255 255 255 / 0.02);
+  box-shadow: var(--gg-top-light);
+}
+[data-ui="button"] { transition: background-color 160ms, box-shadow 220ms, border-color 160ms, color 160ms; }
+
+/* ── Chips: tinted fill + coloured text (C), never a solid colour block ──────────────────── */
+[data-ui="badge"][data-variant="default"] {
+  background: rgb(255 255 255 / 0.9);
+  color: #0a0a0a;
+}
+[data-ui="badge"][data-variant="secondary"],
+[data-ui="badge"][data-variant="outline"] {
+  background: rgb(255 255 255 / 0.05);
+  border-color: var(--gg-hairline);
+}
+
+/* ── Segmented control ────────────────────────────────────────────────────────────────────── */
+[data-ui="segmented"] {
+  border-color: var(--gg-hairline);
+  background: rgb(255 255 255 / 0.02);
+  border-radius: 0.6rem;
+}
+[data-ui="segmented"] button > span.absolute {
+  background: hsl(0 0% 14%) !important;
+  border-color: var(--gg-hairline-strong) !important;
+  box-shadow: var(--gg-top-light), 0 2px 10px -2px rgb(0 0 0 / 0.6);
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────────────────────── */
+[data-ui="brand"] > span:first-child {
+  background: linear-gradient(180deg, #fafafa, #bdbdbd);
+  color: #0a0a0a;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.15), 0 6px 20px -6px rgb(255 255 255 / 0.45);
+}
+[data-ui="nav-item"][data-active] > span.absolute {
+  background: hsl(0 0% 11%);
+  border-color: var(--gg-hairline);
+  box-shadow: var(--gg-top-light);
+}
+
+/* ── Page header ──────────────────────────────────────────────────────────────────────────── */
+[data-ui="page-header"] { border-bottom-color: rgb(255 255 255 / 0.05); }
+
+/* ── Floating dock ────────────────────────────────────────────────────────────────────────── */
+[data-ui="dock"] {
+  background: rgb(20 20 20 / 0.82);
+  border-color: var(--gg-hairline-strong);
+  box-shadow: var(--gg-top-light), 0 20px 50px -12px rgb(0 0 0 / 0.9), 0 0 40px -10px rgb(255 255 255 / 0.08);
+}
+
+/* Popovers / dialogs share the raised surface. */
+[role="dialog"], [role="menu"], [data-radix-popper-content-wrapper] > * {
+  border-color: var(--gg-hairline-strong);
+}
+
+/* ── Sidebar pinned to the viewport (its footer — level, settings — was below the fold) ──── */
+[data-ui="sidebar"] { position: sticky; top: 0; height: 100vh; border-right: 0; }
+
+/* ── Data in light: «done» series render as white light, «in progress» as graphite,
+      «overdue/risk» keeps its red. Colour is only meaning. ─────────────────────────────── */
+[data-ui="area-chart"] stop[stop-color="hsl(var(--success))"] { stop-color: #ffffff; }
+[data-ui="area-chart"] path[stroke="hsl(var(--success))"] {
+  stroke: #f4f4f4;
+  filter: drop-shadow(0 0 6px rgb(255 255 255 / 0.45));
+}
+[data-ui="area-chart"] circle[fill="hsl(var(--success))"] { fill: #fff; filter: drop-shadow(0 0 6px #fff); }
+[data-ui="donut"] circle[stroke="hsl(var(--success))"] {
+  stroke: #ededed;
+  filter: drop-shadow(0 0 5px rgb(255 255 255 / 0.4));
+}
+[data-ui="donut"] circle[stroke="hsl(var(--brand))"] { stroke: #5c5c5c; }
+[data-ui="donut"] circle[stroke="hsl(var(--secondary))"] { stroke: #1c1c1c; }
+[data-ui="progress"] { background: rgb(255 255 255 / 0.06); }
+[data-ui="progress"] > .bg-success {
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.45), #fff);
+  box-shadow: 0 0 10px rgb(255 255 255 / 0.35);
+}
+/* Legend dots echo the series. */
+span[style*="background: hsl(var(--success))"] { background: #f0f0f0 !important; box-shadow: 0 0 6px rgb(255 255 255 / 0.6); }
+span[style*="background: hsl(var(--brand))"] { background: #5c5c5c !important; }
+span[style*="background: hsl(var(--risk))"] { box-shadow: 0 0 6px hsl(var(--risk) / 0.7); }
+[data-ui="level-card"] { border-color: var(--gg-hairline); background: rgb(255 255 255 / 0.02); box-shadow: var(--gg-top-light); }
+[data-ui="level-card"] .bg-success { background: linear-gradient(90deg, rgb(255 255 255 / 0.45), #fff); box-shadow: 0 0 8px rgb(255 255 255 / 0.4); }
+[data-ui="level-card"] .bg-success\/20 { background: rgb(255 255 255 / 0.1); color: #fff; }

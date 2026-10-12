@@ -21,7 +21,7 @@ export function AppShell({
   const { setAssistantOpen } = useUI();
   return (
     <>
-      <header className="glass sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border px-4 py-4 md:px-6">
+      <header data-ui="page-header" className="glass sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border px-4 py-4 md:px-6">
         <div className="min-w-0">
           <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
           {description && (
@@ -43,7 +43,7 @@ export function AppShell({
           <ChangelogButton />
         </div>
       </header>
-      <main className="flex-1 p-4 md:p-6">
+      <main data-ui="page-main" className="flex-1 p-4 md:p-6">
         <PageTransition>{children}</PageTransition>
       </main>
     </>

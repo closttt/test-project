@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import RGL, { WidthProvider, type Layout } from "react-grid-layout";
+import RGL, { WidthProvider } from "react-grid-layout";
 import {
   CalendarClock,
   ListChecks,
@@ -13,11 +13,7 @@ import {
   TrendingUp,
   CircleDashed,
   CheckCircle2,
-  GripVertical,
-  X,
   LayoutGrid,
-  Check,
-  RotateCcw,
   Trash2,
 } from "lucide-react";
 
@@ -36,7 +32,6 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -68,16 +63,15 @@ import { pushUndo } from "@/lib/undoStack";
 import { cn } from "@/lib/utils";
 import { PRIORITY_META, type Priority, type Task } from "@/types";
 import { ReadingWidget } from "@/components/library/ReadingWidget";
-import {
-  WIDGETS,
-  loadLayout,
-  saveLayout,
-  loadHidden,
-  saveHidden,
-  resetDashboard,
-} from "@/lib/dashboardLayout";
+import { WIDGETS, DEFAULT_LAYOUT, LAYOUT_ROWS } from "@/lib/dashboardLayout";
 
 const GridLayout = WidthProvider(RGL);
+/** Gap between widgets; RGL also uses it as the container's own padding. */
+const GRID_MARGIN = 16;
+/** Below this the widgets get too cramped to read — the page scrolls instead. */
+const MIN_ROW_HEIGHT = 28;
+/** <main>'s bottom padding (p-6), kept clear under the grid. */
+const MAIN_BOTTOM_PAD = 24;
 
 const FOCUS_MODE_KEY = "crm-dashboard-focus-v1";
 
@@ -93,6 +87,7 @@ function Stat({ icon: Icon, label, value, accent, onClick }: { icon: typeof Cloc
   return (
     <Card
       onClick={onClick}
+      data-ui="stat"
       className={cn("flex h-full flex-col justify-center p-4", onClick && "cursor-pointer transition-colors hover:border-muted-foreground/25")}
     >
       <div className="mb-2 flex items-center justify-between">
@@ -101,7 +96,7 @@ function Stat({ icon: Icon, label, value, accent, onClick }: { icon: typeof Cloc
           <Icon className="h-3.5 w-3.5" />
         </span>
       </div>
-      <div className="text-xl font-semibold tracking-tight">{value}</div>
+      <div data-ui="stat-value" className="text-xl font-semibold tracking-tight">{value}</div>
     </Card>
   );
 }
@@ -141,11 +136,6 @@ export default function Dashboard() {
   const [meetingTime, setMeetingTime] = useState("12:00");
   const [meetingUrl, setMeetingUrl] = useState("");
 
-  const [editing, setEditing] = useState(false);
-  const [layout, setLayout] = useState<Layout[]>(() => loadLayout());
-  const [hidden, setHidden] = useState<string[]>(() => loadHidden());
-  useEffect(() => saveLayout(layout), [layout]);
-  useEffect(() => saveHidden(hidden), [hidden]);
 
   // On phones the 12-col drag-grid squishes into an unusable mess — render a plain
   // vertical stack instead (KPIs in a 2-up row, the rest full-width, no drag/resize).
@@ -199,8 +189,7 @@ export default function Dashboard() {
     .sort((a, b) => {
       if (!!a.done !== !!b.done) return Number(!!a.done) - Number(!!b.done);
       return (a.date + a.time).localeCompare(b.date + b.time);
-    })
-    .slice(0, 6);
+    });
 
   const minutesToday = todayTasks.reduce((s, t) => s + t.spentMin, 0);
   const closedToday = completionLog[todayStr()] ?? 0;
@@ -538,15 +527,13 @@ export default function Dashboard() {
     }
   }
 
-  const visibleLayout = layout.filter((l) => !hidden.includes(l.i));
-  const hiddenWidgets = WIDGETS.filter((w) => hidden.includes(w.id));
 
   // Mobile stack order + per-widget heights (KPIs are short, big widgets need room).
   const KPI_IDS = ["kpi-money", "kpi-expected", "kpi-today", "kpi-time", "kpi-open", "kpi-week"];
   const MOBILE_H: Record<string, string> = {
     dynamics: "h-60", status: "h-[26rem]", today: "h-[26rem]", "crm-risk": "h-80", meetings: "h-64", note: "h-48", projects: "h-64",
   };
-  const mobileOrder = WIDGETS.map((w) => w.id).filter((id) => !hidden.includes(id));
+  const mobileOrder = WIDGETS.map((w) => w.id);
   const mobileKpis = mobileOrder.filter((id) => KPI_IDS.includes(id));
   const mobileLarge = mobileOrder.filter((id) => !KPI_IDS.includes(id));
 
@@ -557,6 +544,25 @@ export default function Dashboard() {
    */
   const [focusMode, setFocusMode] = useState(() => localStorage.getItem(FOCUS_MODE_KEY) === "1");
   useEffect(() => localStorage.setItem(FOCUS_MODE_KEY, focusMode ? "1" : "0"), [focusMode]);
+  // The whole composition fits one screen: row height is derived from the space left under the
+  // header, so a tall monitor gets roomier widgets and nothing spills below the fold.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [rowHeight, setRowHeight] = useState(40);
+  useLayoutEffect(() => {
+    if (focusMode || isMobile) return;
+    const fit = () => {
+      const el = gridRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const avail = window.innerHeight - top - MAIN_BOTTOM_PAD;
+      const r = Math.floor((avail - (LAYOUT_ROWS + 1) * GRID_MARGIN) / LAYOUT_ROWS);
+      setRowHeight(Math.max(MIN_ROW_HEIGHT, r));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [focusMode, isMobile]);
+
   // Ranking = what to do next: overdue first, then priority, then the soonest due.
   const rankedToday = [...todayTasks].sort((a, b) => {
     if (a.done !== b.done) return Number(a.done) - Number(b.done);
@@ -570,44 +576,20 @@ export default function Dashboard() {
   return (
     <AppShell
       title={greeting()}
-      description={editing ? "Перетаскивайте и растягивайте виджеты" : new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" }).replace(/^./, (c) => c.toUpperCase())}
+      description={new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" }).replace(/^./, (c) => c.toUpperCase())}
       actions={
-        editing ? (
-          <>
-            {hiddenWidgets.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm"><Plus className="h-4 w-4" /> Виджет</Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {hiddenWidgets.map((w) => (
-                    <DropdownMenuItem key={w.id} onClick={() => setHidden((h) => h.filter((x) => x !== w.id))}>{w.title}</DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-            <Button variant="ghost" size="sm" onClick={() => { resetDashboard(); setLayout(loadLayout()); setHidden([]); toast("Сетка сброшена"); }}>
-              <RotateCcw className="h-4 w-4" /> Сброс
-            </Button>
-            <Button size="sm" onClick={() => setEditing(false)}><Check className="h-4 w-4" /> Готово</Button>
-          </>
-        ) : (
-          <>
-            <StreakFlame streak={streak} atRisk={streak >= 2 && closedToday === 0} className="hidden sm:inline-flex" />
-            <Segmented
-              ariaLabel="Вид дашборда"
-              value={focusMode ? "focus" : "widgets"}
-              onChange={(v) => setFocusMode(v === "focus")}
-              options={[
-                { value: "focus", label: <><ListChecks className="h-3.5 w-3.5" /> Фокус</>, title: "Один список: что делать сейчас, по порядку" },
-                { value: "widgets", label: <><LayoutGrid className="h-3.5 w-3.5" /> Виджеты</>, title: "Настраиваемая сетка виджетов" },
-              ]}
-            />
-            {!isMobile && !focusMode && (
-              <Button variant="outline" size="sm" onClick={() => setEditing(true)}><LayoutGrid className="h-4 w-4" /> Настроить</Button>
-            )}
-          </>
-        )
+        <>
+          <StreakFlame streak={streak} atRisk={streak >= 2 && closedToday === 0} className="hidden sm:inline-flex" />
+          <Segmented
+            ariaLabel="Вид дашборда"
+            value={focusMode ? "focus" : "widgets"}
+            onChange={(v) => setFocusMode(v === "focus")}
+            options={[
+              { value: "focus", label: <><ListChecks className="h-3.5 w-3.5" /> Фокус</>, title: "Ключевые задачи и все встречи" },
+              { value: "widgets", label: <><LayoutGrid className="h-3.5 w-3.5" /> Виджеты</>, title: "Сетка виджетов" },
+            ]}
+          />
+        </>
       }
     >
       <Celebration show={celebrated} />
@@ -618,7 +600,7 @@ export default function Dashboard() {
           <Card className="flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="flex items-center gap-2 text-sm text-muted-foreground">
-                <ListChecks className="h-4 w-4" /> Сегодня · по порядку
+                <ListChecks className="h-4 w-4" /> Ключевые задачи · по порядку
               </CardTitle>
               <span className="text-xs text-muted-foreground">{todayDone}/{todayTotal}</span>
             </CardHeader>
@@ -633,8 +615,9 @@ export default function Dashboard() {
                   На сегодня ничего не горит. Хороший день, чтобы взять что-то из «Позже».
                 </p>
               )}
-              {rankedToday.map((t, i) => (
-                <div key={t.id} className={cn("group flex items-center gap-3 rounded-md px-1 py-1.5 hover:bg-secondary/40", overLimitIds.has(t.id) && "opacity-50")}>
+              {/* Only the day's plan (the Ivy Lee cap) — what's over it stays in «Виджеты». */}
+              {rankedToday.filter((t) => !overLimitIds.has(t.id)).map((t, i) => (
+                <div key={t.id} className="group flex items-center gap-3 rounded-md px-1 py-1.5 hover:bg-secondary/40">
                   <span className="w-4 shrink-0 text-center text-xs tabular-nums text-muted-foreground/50">{i + 1}</span>
                   <AnimatedCheckbox checked={t.done} onChange={() => handleToggle(t.id, !t.done)} size="sm" label={t.title} priority={t.priority} />
                   <span
@@ -647,6 +630,14 @@ export default function Dashboard() {
                   {!t.done && isOverdue(t.dueDate) && <span className="shrink-0 text-xs font-medium text-risk">{dueLabel(t.dueDate!)}</span>}
                 </div>
               ))}
+              {overLimitIds.size > 0 && (
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground/60">Ещё {overLimitIds.size} сверх плана дня</span>
+                  <Button variant="ghost" size="sm" className="ml-auto h-6 gap-1 text-xs text-muted-foreground" onClick={pushOverLimitToTomorrow}>
+                    <CalendarClock className="h-3 w-3" /> Перенести на завтра
+                  </Button>
+                </div>
+              )}
               <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
                 <Input value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTodayTask()} placeholder="Добавить задачу на сегодня…" className="h-9" />
                 <PriorityPicker p={newTaskPriority} onChange={setNewTaskPriority} />
@@ -655,21 +646,21 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {upcomingMeetings.filter((m) => !m.done).length > 0 && (
-            <Card>
+          <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <CalendarClock className="h-4 w-4" /> Ближайшие встречи
+                  <CalendarClock className="h-4 w-4" /> Встречи · {upcomingMeetings.length}
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-2">
-                {upcomingMeetings.filter((m) => !m.done).slice(0, 3).map((m) => (
-                  <div key={m.id} className="flex items-center gap-2 text-sm">
+                {upcomingMeetings.length === 0 && <p className="text-sm text-muted-foreground">Встреч не запланировано.</p>}
+                {upcomingMeetings.map((m) => (
+                  <div key={m.id} className={cn("flex items-center gap-2 text-sm", m.done && "opacity-60")}>
                     <AnimatedCheckbox checked={!!m.done} onChange={() => toggleMeeting(m.id)} size="sm" label={`Встреча: ${m.title}`} />
-                    {m.url ? (
+                    {m.url && !m.done ? (
                       <a href={m.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate font-medium text-brand hover:underline">{m.title}</a>
                     ) : (
-                      <span className="min-w-0 flex-1 truncate font-medium">{m.title}</span>
+                      <span className={cn("min-w-0 flex-1 truncate font-medium", m.done && "text-muted-foreground line-through")}>{m.title}</span>
                     )}
                     <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
                       {isToday(m.date) ? "Сегодня" : m.date} · {m.time}
@@ -678,7 +669,6 @@ export default function Dashboard() {
                 ))}
               </CardContent>
             </Card>
-          )}
         </div>
       ) : isMobile ? (
         <div className="flex flex-col gap-3">
@@ -694,52 +684,24 @@ export default function Dashboard() {
           ))}
         </div>
       ) : (
+      <div ref={gridRef}>
       <GridLayout
         className="layout -mx-1"
-        layout={visibleLayout}
+        layout={DEFAULT_LAYOUT}
         cols={12}
-        rowHeight={40}
-        margin={[16, 16]}
-        isDraggable={editing}
-        isResizable={editing}
-        draggableHandle=".rgl-handle"
-        draggableCancel=".no-drag"
+        rowHeight={rowHeight}
+        margin={[GRID_MARGIN, GRID_MARGIN]}
+        isDraggable={false}
+        isResizable={false}
         compactType="vertical"
-        preventCollision={false}
-        resizeHandles={["se"]}
-        onLayoutChange={(l) => {
-          const byId = new Map(l.map((x) => [x.i, x]));
-          setLayout((prev) => prev.map((p) => ({ ...p, ...(byId.get(p.i) ?? {}) })));
-        }}
       >
-        {visibleLayout.map((l) => {
-          const title = WIDGETS.find((w) => w.id === l.i)?.title ?? "";
-          return (
-            <div key={l.i} className={cn("h-full", !editing && "overflow-hidden", editing && "rounded-lg ring-1 ring-brand/50")}>
-              {editing && (
-                <div className="rgl-handle flex cursor-move items-center gap-2 rounded-t-lg border-b border-brand/20 bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand">
-                  <GripVertical className="h-4 w-4" />
-                  <span className="flex-1 truncate">{title}</span>
-                  <button
-                    className="no-drag rounded p-0.5 hover:text-risk"
-                    onClick={() => {
-                      setHidden((h) => [...h, l.i]);
-                      const run = pushUndo(`Виджет скрыт: ${title}`, () => setHidden((h) => h.filter((x) => x !== l.i)));
-                      toast(`Виджет скрыт: ${title}`, { actionLabel: "Вернуть", onAction: run });
-                    }}
-                    title="Скрыть виджет"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
-              <div className={cn("overflow-hidden", editing ? "h-[calc(100%-2.25rem)]" : "h-full")}>
-                {renderWidget(l.i)}
-              </div>
-            </div>
-          );
-        })}
+        {DEFAULT_LAYOUT.map((l) => (
+          <div key={l.i} className="h-full overflow-hidden">
+            {renderWidget(l.i)}
+          </div>
+        ))}
       </GridLayout>
+      </div>
       )}
 
       <Dialog open={openPopup} onOpenChange={setOpenPopup}>

@@ -3,6 +3,8 @@ import { useEffect } from "react";
 import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
 import { hasFired, markFired, fireBrowserNotification } from "@/lib/reminders";
+import { dueMeetingAlerts } from "@/lib/meetingAlerts";
+import { playChime } from "@/lib/sound";
 import { dueSubtaskReminders } from "@/lib/subtasks";
 import { isPushEnvSet } from "@/lib/pushEnv";
 import { isQuietHour } from "@/types";
@@ -42,23 +44,27 @@ export function ReminderEngine() {
         fireBrowserNotification("Напоминание", `${sub.title} · ${parent.title}`);
       });
 
-      // Meetings — remind at start time, within 30 min window. Closed ones stay quiet.
-      meetings.forEach((m) => {
-        if (m.done) return;
-        const at = new Date(`${m.date}T${m.time}`).getTime();
-        const key = `meet:${m.id}:${m.date}${m.time}`;
-        if (at <= now && now - at < 30 * 60 * 1000 && !hasFired(key)) {
-          markFired(key);
+      // Meetings — a bell 5 minutes before the start, then again at the start (within 30 min).
+      // Closed ones stay quiet. The sound follows the app's «Звук» setting.
+      dueMeetingAlerts(meetings, now).forEach(({ meeting: m, kind, key, minutesLeft }) => {
+        if (hasFired(key)) return;
+        markFired(key);
+        if (kind === "soon") {
+          toast(`Через ${minutesLeft} мин: ${m.title} в ${m.time}`);
+          fireBrowserNotification(`Встреча через ${minutesLeft} мин`, `${m.title} · ${m.time}`);
+        } else {
           toast(`Встреча: ${m.title} в ${m.time}`);
           fireBrowserNotification("Встреча сейчас", `${m.title} · ${m.time}`);
         }
+        if (settings.soundEnabled) playChime();
       });
     }
 
     check();
-    const id = setInterval(check, 30_000);
+    // 20s polling keeps the 5-minute alert within ~20s of its moment.
+    const id = setInterval(check, 20_000);
     return () => clearInterval(id);
-  }, [tasks, meetings, toast, settings.quietEnabled, settings.quietFrom, settings.quietTo]);
+  }, [tasks, meetings, toast, settings.quietEnabled, settings.quietFrom, settings.quietTo, settings.soundEnabled]);
 
   /**
    * Keeps the push queue in step with local reminders, so a reminder that's cleared or a task

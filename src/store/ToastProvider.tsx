@@ -41,6 +41,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ toast }}>
       {children}
       <div
+        data-ui="toasts"
         role="status"
         aria-live="polite"
         aria-atomic="true"
@@ -50,6 +51,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           {toasts.map((t) => (
             <motion.div
               key={t.id}
+              data-ui="toast"
               layout
               initial={{ opacity: 0, y: 16, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -57,9 +59,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               transition={spring}
               className="pointer-events-auto flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-4 py-3 shadow-lg"
             >
-              <span className="text-sm">{t.message}</span>
+              <span data-ui="toast-text" className="text-sm">{t.message}</span>
               {t.actionLabel && t.onAction && (
                 <Button
+                  data-ui="toast-action"
                   variant="ghost"
                   size="sm"
                   className="h-7 shrink-0 text-brand hover:text-brand"

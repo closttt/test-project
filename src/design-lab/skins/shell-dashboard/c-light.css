@@ -1,0 +1,73 @@
+/* S01 · C — «Световой акцент» (Network devices, Celoci active bar, Wallet).
+   The frame from A, but light becomes the state language: the active nav item glows with a
+   lit edge, card borders are brighter at the top (lit from above), hover warms the edge,
+   and a quiet ambient orb sits in the corner of the panel. */
+[data-ui="app"] { background: #050505; }
+[data-ui="sidebar"] { background: transparent; border-right-color: transparent; }
+[data-ui="content"] {
+  position: relative;
+  margin: 8px 8px 8px 0;
+  min-height: calc(100vh - 16px);
+  border: 1px solid rgb(255 255 255 / 0.06);
+  border-radius: 18px;
+  background: #0a0a0a;
+  overflow: clip;
+}
+[data-ui="content"]::before,
+[data-ui="content"]::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: 50%;
+  filter: blur(60px);
+}
+[data-ui="content"]::before { width: 640px; height: 360px; top: -210px; left: 14%; background: rgb(255 255 255 / 0.13); }
+[data-ui="content"]::after { width: 560px; height: 340px; bottom: -200px; right: 4%; background: rgb(200 208 255 / 0.1); }
+[data-ui="content"] > * { position: relative; z-index: 1; }
+[data-ui="page-header"] { background: rgb(10 10 10 / 0.6); }
+
+/* Lit-from-above border via a masked gradient ring. */
+[data-ui="card"], [data-ui="stat"] {
+  position: relative;
+  background-color: #0e0e0e;
+  border-color: transparent;
+  isolation: isolate;
+}
+[data-ui="card"]::before, [data-ui="stat"]::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.26), rgb(255 255 255 / 0.06) 35%, rgb(255 255 255 / 0.025));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  transition: background 220ms;
+}
+[data-ui="stat"]:hover::before { background: linear-gradient(180deg, rgb(255 255 255 / 0.32), rgb(255 255 255 / 0.08)); }
+
+[data-ui="nav-item"][data-active] > span.absolute {
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.02));
+  border-color: rgb(255 255 255 / 0.06);
+}
+[data-ui="nav-item"][data-active]::after {
+  content: "";
+  position: absolute;
+  left: -16px;
+  top: 25%;
+  bottom: 25%;
+  width: 2px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 10px 1px rgb(255 255 255 / 0.7), 0 0 26px 4px rgb(255 255 255 / 0.25);
+}
+[data-ui="nav-item"][data-active] svg { filter: drop-shadow(0 0 6px rgb(255 255 255 / 0.55)); }
+[data-ui="stat-value"] { text-shadow: 0 0 22px rgb(255 255 255 / 0.25); }
+
+/* Card hover: the lit edge warms and a faint halo rises behind the card. */
+[data-ui="card"], [data-ui="stat"] { transition: box-shadow 260ms; }
+[data-ui="card"]:hover, [data-ui="stat"]:hover { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.04), 0 0 40px -12px rgb(255 255 255 / 0.18); }
+[data-ui="card"] { background-image: radial-gradient(90% 60% at 50% 0%, rgb(255 255 255 / 0.05), transparent 70%); }

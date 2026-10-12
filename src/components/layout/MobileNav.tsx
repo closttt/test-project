@@ -6,11 +6,9 @@ import {
   FolderKanban,
   CheckSquare,
   StickyNote,
-  CalendarDays,
   CalendarClock,
   BarChart3,
   BookMarked,
-  Archive,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -24,10 +22,8 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   tasks: CheckSquare,
   planner: CalendarClock,
   notes: StickyNote,
-  calendar: CalendarDays,
   analytics: BarChart3,
   knowledge: BookMarked,
-  archive: Archive,
 };
 
 // Bottom bar space is tight on a phone — show the user's top N in their own customized order

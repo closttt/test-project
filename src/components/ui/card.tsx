@@ -6,6 +6,7 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
+      data-ui="card"
       className={cn(
         // Flat matte surface, reference aesthetic: a hairline border on a slightly-lifted fill
         // does the separating — no gradient sheen, no glow shadow. Card is the shared primitive
@@ -23,6 +24,7 @@ const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDiv
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
+      data-ui="card-header"
       className={cn("flex flex-col space-y-1.5 p-6", className)}
       {...props}
     />
@@ -34,6 +36,7 @@ const CardTitle = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HT
   ({ className, ...props }, ref) => (
     <h3
       ref={ref}
+      data-ui="card-title"
       className={cn("text-base font-semibold leading-none tracking-tight", className)}
       {...props}
     />

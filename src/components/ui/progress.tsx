@@ -17,6 +17,7 @@ export function Progress({
   return (
     <div
       className={cn("h-1.5 w-full overflow-hidden rounded-full bg-secondary", className)}
+      data-ui="progress"
       role="progressbar"
       aria-valuenow={clamped}
       aria-valuemin={0}

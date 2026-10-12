@@ -32,3 +32,26 @@ export function playPop() {
   osc.start(now);
   osc.stop(now + 0.2);
 }
+
+/** A clear two-note bell for meeting alerts — louder and longer than the pop, so it's heard from another tab. */
+export function playChime() {
+  const ac = getCtx();
+  if (!ac) return;
+  if (ac.state === "suspended") ac.resume().catch(() => {});
+  const now = ac.currentTime;
+  [
+    { f: 880, at: 0 },
+    { f: 1318.5, at: 0.18 },
+  ].forEach(({ f, at }) => {
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(f, now + at);
+    gain.gain.setValueAtTime(0.0001, now + at);
+    gain.gain.exponentialRampToValueAtTime(0.22, now + at + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.9);
+    osc.connect(gain).connect(ac.destination);
+    osc.start(now + at);
+    osc.stop(now + at + 0.95);
+  });
+}

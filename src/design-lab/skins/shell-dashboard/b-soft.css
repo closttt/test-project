@@ -1,0 +1,27 @@
+/* S01 · B — «Мягкие панели» (Relatel, Taskplus, Mailite).
+   No frame: the canvas is the page. Widgets are softer, lighter, rounder panels with a corner
+   sheen; titles read in full white with the icon in a small chip; numbers get bigger. */
+[data-ui="app"] { background: #0a0a0a; }
+[data-ui="sidebar"] { background: #0d0d0d; border-right-color: rgb(255 255 255 / 0.05); }
+[data-ui="page-header"] { background: rgb(10 10 10 / 0.75); }
+[data-ui="card"], [data-ui="stat"] {
+  background-color: #141414;
+  background-image: radial-gradient(140% 90% at 0% 0%, rgb(255 255 255 / 0.05), transparent 50%);
+  border-color: rgb(255 255 255 / 0.055);
+  border-radius: 20px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 10px 30px -18px rgb(0 0 0 / 0.9);
+}
+[data-ui="card-title"] { color: hsl(var(--foreground)) !important; font-weight: 500; }
+[data-ui="card-title"] > svg {
+  box-sizing: content-box;
+  padding: 5px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.06);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+[data-ui="stat-value"] { font-size: 1.75rem; line-height: 1.1; font-weight: 600; letter-spacing: -0.03em; }
+[data-ui="nav-item"][data-active] > span.absolute {
+  background: #1c1c1c;
+  border-color: transparent;
+  border-radius: 10px;
+}

@@ -37,6 +37,7 @@ export function Segmented<T extends string>({
   return (
     <div
       role="group"
+      data-ui="segmented"
       aria-label={ariaLabel}
       className={cn("flex flex-wrap items-center gap-1 rounded-md border border-border p-0.5 text-xs", className)}
     >

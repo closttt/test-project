@@ -1,0 +1,59 @@
+/* S01 · D — «Графитовая сетка» (Stuudio, Solexa, Azura).
+   A precise, instrument-like take: dotted grid on the panel, tighter radii, card headers split
+   off by a hairline with small caps labels, numbers in mono. Light only as a thin bright line
+   on the top edge of KPI tiles. */
+[data-ui="app"] { background: #050505; }
+[data-ui="sidebar"] { background: transparent; border-right-color: transparent; }
+[data-ui="content"] {
+  position: relative;
+  margin: 8px 8px 8px 0;
+  min-height: calc(100vh - 16px);
+  border: 1px solid rgb(255 255 255 / 0.07);
+  border-radius: 14px;
+  background-color: #0a0a0a;
+  background-image: radial-gradient(rgb(255 255 255 / 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+  overflow: clip;
+}
+[data-ui="page-header"] { background: rgb(10 10 10 / 0.85); }
+[data-ui="card"], [data-ui="stat"] {
+  border-radius: 10px;
+  background-color: #0e0e0e;
+  background-image: none;
+  border-color: rgb(255 255 255 / 0.08);
+}
+[data-ui="card-header"] {
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem !important;
+}
+[data-ui="card-title"] {
+  font-size: 0.6875rem !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+}
+[data-ui="stat"] { position: relative; overflow: hidden; }
+[data-ui="stat"]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+  box-shadow: 0 0 12px 1px rgb(255 255 255 / 0.25);
+}
+[data-ui="stat"] > div:first-child > span:first-child {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.65rem;
+}
+[data-ui="stat-value"] {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 500;
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+}
+[data-ui="nav-item"] { border-radius: 8px; }
+[data-ui="nav-item"][data-active] > span.absolute { border-radius: 8px; background: #141414; }

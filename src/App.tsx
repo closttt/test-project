@@ -1,30 +1,31 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
+import { GlobalLayout } from "@/components/layout/GlobalLayout";
 import { AppLayout } from "@/components/layout/AppLayout";
 
-const Dashboard = lazy(() => import("@/pages/Dashboard"));
-const Clients = lazy(() => import("@/pages/Clients"));
-const Projects = lazy(() => import("@/pages/Projects"));
-const ProjectDetail = lazy(() => import("@/pages/ProjectDetail"));
-const Tasks = lazy(() => import("@/pages/Tasks"));
-const Planner = lazy(() => import("@/pages/Planner"));
-const Notes = lazy(() => import("@/pages/Notes"));
-const CalendarPage = lazy(() => import("@/pages/CalendarPage"));
-const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
+/**
+ * Pages are the Craft Dark screens the owner approved in the design lab (src/design-lab/screens,
+ * one chosen concept per section — see design-lab/notes.md). They run on the same store and
+ * actions as the old pages, so the data is untouched; only the UI changed. The old pages stay in
+ * src/pages for the sections not redesigned yet (Архив, Story, Focus).
+ */
+const Dashboard = lazy(() => import("@/design-lab/screens/dashboard/mix/v1"));
+const Clients = lazy(() => import("@/design-lab/screens/clients/craft/v5"));
+const Projects = lazy(() => import("@/design-lab/screens/projects/craft/v6"));
+const ProjectDetail = lazy(() => import("@/design-lab/screens/project/craft/v5"));
+const Tasks = lazy(() => import("@/design-lab/screens/tasks/craft/v1"));
+const Notes = lazy(() => import("@/design-lab/screens/notes/craft/v4"));
+const Analytics = lazy(() => import("@/design-lab/screens/analytics/craft/v5"));
+const Knowledge = lazy(() => import("@/design-lab/screens/knowledge/craft/v5"));
+const SettingsPage = lazy(() => import("@/design-lab/screens/settings/craft/v1"));
+const Achievements = lazy(() => import("@/design-lab/screens/achievements/craft/v1"));
 const FocusPage = lazy(() => import("@/pages/FocusPage"));
-const Achievements = lazy(() => import("@/pages/Achievements"));
 const Changelog = lazy(() => import("@/pages/Changelog"));
-const Analytics = lazy(() => import("@/pages/Analytics"));
 const Archive = lazy(() => import("@/pages/Archive"));
-const Knowledge = lazy(() => import("@/pages/Knowledge"));
 
 function PageFallback() {
-  return (
-    <div className="flex h-40 items-center justify-center">
-      <span className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-foreground" />
-    </div>
-  );
+  return <div className="min-h-screen" style={{ background: "#0A0A0B" }} />;
 }
 
 export default function App() {
@@ -33,25 +34,29 @@ export default function App() {
       <Routes>
         {/* Focus mode is full-screen — outside the app shell chrome. */}
         <Route path="/focus" element={<FocusPage />} />
-        <Route element={<AppLayout />}>
+        <Route element={<GlobalLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/tasks" element={<Tasks />} />
-          <Route path="/planner" element={<Planner />} />
           <Route path="/notes" element={<Notes />} />
-          <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/analytics" element={<Analytics />} />
-          <Route path="/archive" element={<Archive />} />
           <Route path="/knowledge" element={<Knowledge />} />
-          {/* «Сервисы» (почта, Notion) отключены целиком — старые закладки ведут на дашборд.
-              Код раздела остался в pages/Services.tsx: вернуть = маршрут + пункт навигации. */}
-          <Route path="/services" element={<Navigate to="/" replace />} />
-          <Route path="/mail" element={<Navigate to="/" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/achievements" element={<Achievements />} />
-          <Route path="/changelog" element={<Changelog />} />
+          {/* Not redesigned yet — keep their legacy chrome. */}
+          <Route element={<AppLayout />}>
+            <Route path="/archive" element={<Archive />} />
+            <Route path="/changelog" element={<Changelog />} />
+          </Route>
+          {/* «Планер» removed by the owner (2026-10-12). Its data (planBlocks/planTemplates) stays
+              in AppData untouched; the page code is in pages/Planner.tsx. */}
+          <Route path="/planner" element={<Navigate to="/" replace />} />
+          {/* «Сервисы» (почта, Notion) и «Календарь» отключены — старые закладки ведут на дашборд. */}
+          <Route path="/services" element={<Navigate to="/" replace />} />
+          <Route path="/mail" element={<Navigate to="/" replace />} />
+          <Route path="/calendar" element={<Navigate to="/" replace />} />
           {/* Stale/typo'd/removed deep links land on the dashboard instead of a blank shell. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

@@ -2,6 +2,7 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import fs from "fs";
 
 /**
  * The secret-free `/api/*` functions in-process during `npm run dev`: link previews (`/api/unfurl`)
@@ -44,8 +45,65 @@ function devApi(): Plugin {
   };
 }
 
+/**
+ * Design lab (dev only): the decision board (design-lab.html) autosaves the owner's verdicts here,
+ * so the redesign agent reads them straight from design-lab/notes.json + notes.md.
+ */
+function designLabNotes(): Plugin {
+  const dir = path.resolve(__dirname, "design-lab");
+  return {
+    name: "design-lab-notes",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use("/__lab/notes", async (req, res) => {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        try {
+          if (req.method === "POST") {
+            let body = "";
+            for await (const chunk of req) body += chunk;
+            const { json, markdown } = JSON.parse(body) as { json: unknown; markdown: string };
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(path.join(dir, "notes.json"), JSON.stringify(json, null, 2));
+            fs.writeFileSync(path.join(dir, "notes.md"), markdown);
+            res.end(JSON.stringify({ ok: true }));
+            return;
+          }
+          const file = path.join(dir, "notes.json");
+          res.end(fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "{}");
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+        }
+      });
+      // Reference screenshots the owner attaches to a screen: saved as files in design-lab/feedback/
+      // (served back at /design-lab/feedback/…) so the redesign agent can open them directly.
+      server.middlewares.use("/__lab/upload", async (req, res) => {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        try {
+          if (req.method !== "POST") throw new Error("POST only");
+          let body = "";
+          for await (const chunk of req) body += chunk;
+          const { name, data } = JSON.parse(body) as { name: string; data: string };
+          const m = /^data:image\/(png|jpe?g|webp|gif);base64,(.+)$/.exec(data);
+          if (!m) throw new Error("Нужна картинка PNG, JPG, WebP или GIF");
+          const ext = m[1] === "jpeg" ? "jpg" : m[1];
+          const base = (name || "ref").replace(/\.[^.]+$/, "").replace(/[^\p{L}\p{N}_-]+/gu, "-").slice(0, 40) || "ref";
+          const file = `${new Date().toISOString().replace(/[:.]/g, "-")}-${base}.${ext}`;
+          const out = path.join(dir, "feedback");
+          fs.mkdirSync(out, { recursive: true });
+          fs.writeFileSync(path.join(out, file), Buffer.from(m[2], "base64"));
+          res.end(JSON.stringify({ url: `/design-lab/feedback/${file}`, path: path.join(out, file) }));
+        } catch (e) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), devApi()],
+  plugins: [react(), devApi(), designLabNotes()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

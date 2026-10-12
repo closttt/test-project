@@ -5,9 +5,7 @@ import {
   FolderKanban,
   CheckSquare,
   StickyNote,
-  CalendarDays,
   BarChart3,
-  Archive,
   Settings,
   Plus,
   CircleDot,
@@ -50,12 +48,9 @@ const NAV = [
   { to: "/clients", label: "Клиенты", icon: Users },
   { to: "/projects", label: "Проекты", icon: FolderKanban },
   { to: "/tasks", label: "Задачи", icon: CheckSquare },
-  { to: "/planner", label: "Планер · неделя по часам", icon: CalendarClock },
   { to: "/notes", label: "Заметки", icon: StickyNote },
-  { to: "/calendar", label: "Календарь", icon: CalendarDays },
   { to: "/analytics", label: "Аналитика", icon: BarChart3 },
   { to: "/knowledge", label: "База знаний", icon: BookMarked },
-  { to: "/archive", label: "Архив", icon: Archive },
   { to: "/achievements", label: "Достижения", icon: Trophy },
   { to: "/changelog", label: "Story · обновления", icon: BookOpen },
   { to: "/settings", label: "Настройки", icon: Settings },
@@ -358,7 +353,7 @@ export function CommandPalette() {
         {meetings.length > 0 && (
           <CommandGroup heading="Встречи">
             {(search.trim() ? meetings : meetings.filter((m) => !m.done).slice(0, 6)).map((m) => (
-              <CommandItem key={m.id} value={`meeting встреча ${m.title}`} onSelect={() => go("/calendar")}>
+              <CommandItem key={m.id} value={`meeting встреча ${m.title}`} onSelect={() => go("/")}>
                 <CalendarClock />
                 <span className={m.done ? "text-muted-foreground line-through" : ""}>{m.title}</span>
                 <span className="text-muted-foreground">· {isToday(m.date) ? "сегодня" : m.date}</span>

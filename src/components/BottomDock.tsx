@@ -40,7 +40,7 @@ export function BottomDock() {
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-20 z-40 flex justify-center md:bottom-6">
-      <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-card/95 p-1.5 shadow-lg shadow-black/20 backdrop-blur">
+      <div data-ui="dock" className="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-card/95 p-1.5 shadow-lg shadow-black/20 backdrop-blur">
         {timerTask && (
           <>
             <button

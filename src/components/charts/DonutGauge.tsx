@@ -36,7 +36,7 @@ export function DonutGauge({
 
   return (
     <div ref={containerRef} className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
+      <svg data-ui="donut" width={size} height={size} className="-rotate-90">
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="hsl(var(--secondary))" strokeWidth={thickness} />
         {segments.map((s, i) => {
           if (s.value <= 0) return null;

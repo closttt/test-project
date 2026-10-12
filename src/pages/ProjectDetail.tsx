@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   ArrowLeft, Trash2, Plus, CheckSquare, StickyNote, X,
-  ImagePlus, ImageOff, Images, ChevronDown, ChevronRight, GripVertical, MessageSquare, Eye, EyeOff, Save,
-  Paperclip, CalendarClock, FolderInput,
+  ImagePlus, ImageOff, ChevronDown, ChevronRight, GripVertical, MessageSquare, Eye, EyeOff,
+  CalendarClock, FolderInput,
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -34,13 +34,10 @@ import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { PriorityPicker } from "@/components/PriorityPicker";
 import { Calendar } from "@/components/ui/calendar";
 import { ProjectHealthBadge } from "@/components/ProjectHealthBadge";
-import { PhotoGallery, saveGalleryFiles, deleteGalleryFile } from "@/components/PhotoGallery";
-import { AttachmentRow } from "@/components/AttachmentRow";
 import { DragRowsContext, DragRow, DropZone, DragHandle } from "@/components/dnd/DragRows";
 import { TaskEditDialog } from "@/components/TaskEditDialog";
 import { SubtaskRow } from "@/components/SubtaskRow";
 import { SubtaskEditDialog } from "@/components/SubtaskEditDialog";
-import { PromptDialog } from "@/components/PromptDialog";
 import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
 import { cn } from "@/lib/utils";
@@ -51,8 +48,8 @@ import { pushRecent } from "@/lib/recent";
 import { pushUndo } from "@/lib/undoStack";
 import { parseNaturalInput } from "@/lib/nlp";
 import { uid } from "@/lib/id";
-import { saveAttachmentBlob, loadAttachmentBlob, deleteAttachmentBlob, MAX_ATTACHMENT_BYTES } from "@/lib/attachments";
-import type { ProjectStatus, Task, Attachment, Priority } from "@/types";
+import { saveAttachmentBlob, loadAttachmentBlob, deleteAttachmentBlob } from "@/lib/attachments";
+import type { ProjectStatus, Task, Priority } from "@/types";
 
 const NO_SECTION = "—";
 type SortMode = "manual" | "date" | "priority";
@@ -85,7 +82,6 @@ export default function ProjectDetail() {
     addProjectSection, deleteProjectSection, renameProjectSection, reorderProjectSections,
     addProjectComment, deleteProjectComment,
     addTask, updateTask, toggleTask, deleteTask, restoreTask, reorderTasks,
-    addProjectTemplate,
   } = useData();
   const { toast } = useToast();
   const [newTask, setNewTask] = useState("");
@@ -110,9 +106,7 @@ export default function ProjectDetail() {
   const [editingSub, setEditingSub] = useState<{ taskId: string; subId: string } | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
-  const filesInputRef = useRef<HTMLInputElement>(null);
   const [renamingProject, setRenamingProject] = useState(false);
-  const [savingTemplate, setSavingTemplate] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
 
   // allProjects (not the active-only list) — an archived project should still open by direct
@@ -330,34 +324,6 @@ export default function ProjectDetail() {
     updateProject(project.id, { coverAttachmentId: undefined });
   }
 
-  async function handlePhotosAdd(files: File[]) {
-    if (!project) return;
-    const added = await saveGalleryFiles(files);
-    if (added.length) updateProject(project.id, { photos: [...(project.photos ?? []), ...added] });
-    if (added.length < files.length) toast(`Файл слишком большой: ${files.length - added.length}`);
-  }
-
-  async function handlePhotoRemove(id: string) {
-    if (!project) return;
-    await deleteGalleryFile(id);
-    updateProject(project.id, { photos: (project.photos ?? []).filter((p) => p.id !== id) });
-  }
-
-  async function handleFilesAdd(fileList: FileList | null) {
-    if (!fileList || !project) return;
-    const files = Array.from(fileList);
-    const added: Attachment[] = [];
-    let rejected = 0;
-    for (const file of files) {
-      if (file.size > MAX_ATTACHMENT_BYTES) { rejected++; continue; }
-      const id = uid();
-      await saveAttachmentBlob(id, file);
-      added.push({ id, name: file.name, type: file.type, size: file.size, createdAt: new Date().toISOString() });
-    }
-    if (added.length) updateProject(project.id, { files: [...(project.files ?? []), ...added] });
-    if (rejected) toast(`Файл слишком большой (>${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} МБ): ${rejected}`);
-  }
-
   function toggleTaskExpanded(taskId: string) {
     setExpandedTasks((prev) => {
       const next = new Set(prev);
@@ -370,12 +336,6 @@ export default function ProjectDetail() {
     deleteTask(t.id);
     const run = pushUndo("Задача удалена", () => restoreTask(t));
     toast("Задача удалена", { actionLabel: "Вернуть", onAction: run });
-  }
-
-  async function handleFileRemove(att: Attachment) {
-    if (!project) return;
-    await deleteAttachmentBlob(att.id);
-    updateProject(project.id, { files: (project.files ?? []).filter((f) => f.id !== att.id) });
   }
 
   function startRenameProject() {
@@ -729,46 +689,6 @@ export default function ProjectDetail() {
                 )}
               </CardContent>
             </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Images className="h-4 w-4" /> Фото
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <PhotoGallery photos={project.photos ?? []} onAdd={handlePhotosAdd} onRemove={handlePhotoRemove} />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Paperclip className="h-4 w-4" /> Файлы
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                <input
-                  ref={filesInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => { handleFilesAdd(e.target.files); e.target.value = ""; }}
-                />
-                {(project.files ?? []).length === 0 ? (
-                  <p className="py-2 text-center text-xs text-muted-foreground">Пока пусто.</p>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    {(project.files ?? []).map((f) => (
-                      <AttachmentRow key={f.id} att={f} onRemove={() => handleFileRemove(f)} />
-                    ))}
-                  </div>
-                )}
-                <Button variant="outline" size="sm" className="self-start gap-1.5" onClick={() => filesInputRef.current?.click()}>
-                  <Plus className="h-3.5 w-3.5" /> Прикрепить файл
-                </Button>
-              </CardContent>
-            </Card>
           </div>
         </StaggerItem>
 
@@ -825,17 +745,6 @@ export default function ProjectDetail() {
                   </Button>
                 </div>
               </div>
-
-              {projectTasks.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mb-1 h-7 w-fit gap-1.5 text-xs text-muted-foreground"
-                  onClick={() => setSavingTemplate(true)}
-                >
-                  <Save className="h-3.5 w-3.5" /> Сохранить как шаблон
-                </Button>
-              )}
 
               <div className="mb-1 flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-1 rounded-md border border-border p-0.5 text-xs">
@@ -1001,21 +910,6 @@ export default function ProjectDetail() {
           </Card>
         </StaggerItem>
       </StaggerList>
-
-      <PromptDialog
-        open={savingTemplate}
-        onOpenChange={setSavingTemplate}
-        title="Название шаблона"
-        defaultValue={project.name}
-        onSubmit={(name) => {
-          addProjectTemplate(
-            name,
-            sections,
-            projectTasks.map((t) => ({ title: t.title, section: t.section }))
-          );
-          toast(`Шаблон «${name}» сохранён`);
-        }}
-      />
 
       <TaskEditDialog task={editing} open={!!editing} onOpenChange={(v) => !v && setEditing(null)} />
 

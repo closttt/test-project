@@ -10,12 +10,9 @@ export const NAV_ITEMS: NavItemMeta[] = [
   { id: "clients", label: "Клиенты", to: "/clients" },
   { id: "projects", label: "Проекты", to: "/projects" },
   { id: "tasks", label: "Задачи", to: "/tasks" },
-  { id: "planner", label: "Планер", to: "/planner" },
   { id: "notes", label: "Заметки", to: "/notes" },
-  { id: "calendar", label: "Календарь", to: "/calendar" },
   { id: "analytics", label: "Аналитика", to: "/analytics" },
   { id: "knowledge", label: "База знаний", to: "/knowledge" },
-  { id: "archive", label: "Архив", to: "/archive" },
 ];
 
 const ORDER_KEY = "crm-nav-order-v1";

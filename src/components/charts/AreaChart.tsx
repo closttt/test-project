@@ -96,7 +96,7 @@ export function AreaChart({
         className="relative"
         style={fill ? { width: "100%", flex: "1 1 0", minHeight: 0 } : { width: "100%", height }}
       >
-        <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="100%">
+        <svg data-ui="area-chart" viewBox={`0 0 ${w} ${h}`} width="100%" height="100%">
           <defs>
             <linearGradient id={`grad-${gid}`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={color} stopOpacity="0.22" />

@@ -1,0 +1,27 @@
+/* S01 · A — «Рамка» (Wallet, Celoci, Luminar).
+   Sidebar sits straight on the canvas; the working area is ONE inset panel with a soft light
+   falling from the top. Cards inside are flat, separated by hairlines. */
+[data-ui="app"] { background: #050505; }
+[data-ui="sidebar"] { background: transparent; border-right-color: transparent; }
+[data-ui="content"] {
+  position: relative;
+  margin: 8px 8px 8px 0;
+  min-height: calc(100vh - 16px);
+  border: 1px solid rgb(255 255 255 / 0.07);
+  border-radius: 18px;
+  background: #0b0b0b;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  overflow: clip;
+}
+[data-ui="content"]::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 420px;
+  pointer-events: none;
+  background: radial-gradient(60% 100% at 40% 0%, rgb(255 255 255 / 0.055), transparent 70%);
+  z-index: 0;
+}
+[data-ui="content"] > * { position: relative; z-index: 1; }
+[data-ui="page-header"] { background: rgb(11 11 11 / 0.7); border-radius: 18px 18px 0 0; }
+[data-ui="card"], [data-ui="stat"] { background-color: #0f0f0f; }

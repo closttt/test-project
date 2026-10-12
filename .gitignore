@@ -4,3 +4,11 @@ dist-ssr
 *.local
 .DS_Store
 .playwright-mcp
+
+# design-lab: read-only snapshot of production data (personal data, never commit)
+design-lab/.data/
+design-lab/refs/
+design-lab/feedback/
+
+# Supabase data dumps (personal data, never commit)
+backups/

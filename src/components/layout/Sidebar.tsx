@@ -7,10 +7,8 @@ import {
   FolderKanban,
   CheckSquare,
   StickyNote,
-  CalendarDays,
   CalendarClock,
   BarChart3,
-  Archive,
   Settings,
   BookMarked,
 } from "lucide-react";
@@ -31,10 +29,8 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   tasks: CheckSquare,
   planner: CalendarClock,
   notes: StickyNote,
-  calendar: CalendarDays,
   analytics: BarChart3,
   knowledge: BookMarked,
-  archive: Archive,
 };
 
 function NavItem({
@@ -59,6 +55,8 @@ function NavItem({
     <NavLink
       to={to}
       end={end}
+      data-ui="nav-item"
+      data-active={isActive || undefined}
       className={cn(
         "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
         isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -127,9 +125,9 @@ export function Sidebar() {
     }));
 
   return (
-    <aside className="hidden md:flex w-60 shrink-0 flex-col justify-between border-r border-border bg-card/30 p-4">
+    <aside data-ui="sidebar" className="hidden md:flex w-60 shrink-0 flex-col justify-between border-r border-border bg-card/30 p-4">
       <div>
-        <div className="mb-6 flex items-center gap-2.5 px-2">
+        <div data-ui="brand" className="mb-6 flex items-center gap-2.5 px-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-sm font-bold text-brand-foreground">
             Р
           </span>
@@ -145,6 +143,7 @@ export function Sidebar() {
         {gamification.enabled && (
           <NavLink
             to="/achievements"
+            data-ui="level-card"
             className="mb-1 flex flex-col gap-1.5 rounded-md border border-border px-3 py-2 transition-colors hover:border-muted-foreground/30"
           >
             <div className="flex items-center justify-between text-sm">
