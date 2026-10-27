@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, Check, Clock3, FolderKanban, ListChecks, Plus, Trash2, X } from "lucide-react";
+import { ArrowUpRight, CalendarClock, Check, Clock3, FolderKanban, ListChecks, Plus, Trash2, X } from "lucide-react";
 
 import { Btn, C, IconBtn, PRIO_TONE, R, T, TONE, dashed } from "@/design-lab/screens/_kit/craft";
 import { CalendarPanel, DatePicker, Floating, Select, TagChips, TagInput, metaChip } from "@/design-lab/screens/_kit/controls";
@@ -17,7 +17,7 @@ import { blockingTasks } from "@/lib/dependencies";
 import { parseNaturalInput } from "@/lib/nlp";
 import { pushUndo } from "@/lib/undoStack";
 import { FIXED_TAGS } from "@/lib/tags";
-import type { Priority, Task } from "@/types";
+import type { Meeting, Priority, Task } from "@/types";
 
 // ── Constants ─────────────────────────────────────────────────────────────────────────────────
 
@@ -790,6 +790,189 @@ export function NewTaskBtn({ onClick }: { onClick: () => void }) {
   return (
     <Btn icon={<Plus size={16} strokeWidth={2} />} onClick={onClick}>
       Новая задача
+    </Btn>
+  );
+}
+
+// ── Встреча вручную — добавление и правка, в том же окне, что редактор задачи ──────────────────
+
+const DURATIONS = [15, 30, 45, 60, 90, 120].map((n) => ({ value: String(n), label: formatDuration(n) }));
+const RECURRENCE: { value: Meeting["recurrence"]; label: string }[] = [
+  { value: "none", label: "Не повторять" },
+  { value: "weekly", label: "Каждую неделю" },
+  { value: "monthly", label: "Каждый месяц" },
+];
+
+/** Next round half-hour from now — the default start of a new meeting. */
+function nextSlot(): string {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() < 30 ? 30 : 60, 0, 0);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * Встреча вручную — то, что раньше приходило только из календаря или Telegram. Без `meetingId` —
+ * новая (addMeeting), с ним — правка и удаление. Задача-двойник на её день следует за встречей сама
+ * (lib/meetingTasks.ts).
+ */
+export function MeetingEditor({ meetingId, date, onClose }: { meetingId?: string; date?: string; onClose: () => void }) {
+  const { clients, meetings, settings, addMeeting, updateMeeting, deleteMeeting, restoreMeeting } = useData();
+  const { toast } = useToast();
+  const mt = meetingId ? meetings.find((x) => x.id === meetingId) : undefined;
+  const [title, setTitle] = useState(mt?.title ?? "");
+  const [day, setDay] = useState(mt?.date ?? date ?? todayStr());
+  const [time, setTime] = useState(() => mt?.time ?? nextSlot());
+  const [duration, setDuration] = useState(String(mt?.durationMin ?? 60));
+  const [url, setUrl] = useState(mt?.url ?? "");
+  const [clientId, setClientId] = useState(mt?.clientId ?? "");
+  const [recurrence, setRecurrence] = useState<Meeting["recurrence"]>(mt?.recurrence ?? "none");
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [onClose]);
+  const editing = !!meetingId;
+  useEffect(() => {
+    if (editing && !mt) onClose();
+  }, [editing, mt, onClose]);
+  if (editing && !mt) return null;
+  // Встречи без времени (весь день из календаря) правятся без него; новой время нужно.
+  const ready = !!title.trim() && !!day && (/^\d{2}:\d{2}$/.test(time) || (editing && !time));
+  const save = () => {
+    if (!ready) return;
+    const fields = {
+      title: title.trim(),
+      date: day,
+      time,
+      durationMin: Number(duration),
+      recurrence,
+      url: url.trim() || undefined,
+      clientId: clientId || undefined,
+    };
+    if (mt) {
+      updateMeeting(mt.id, fields);
+      toast("Встреча сохранена");
+    } else {
+      addMeeting(fields);
+      toast(`Встреча добавлена · ${formatDate(day)}, ${time}`);
+    }
+    onClose();
+  };
+  const remove = () => {
+    if (!mt) return;
+    deleteMeeting(mt.id);
+    toast("Встреча удалена", { actionLabel: "Вернуть", onAction: () => restoreMeeting(mt) });
+    onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto p-6" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)" }} onMouseDown={onClose}>
+      <form
+        role="dialog"
+        data-lab-block="meeting-editor"
+        aria-label={editing ? "Встреча" : "Новая встреча"}
+        className="flex w-full max-w-[580px] flex-col gap-5 p-6"
+        style={{ background: C.panel, borderRadius: R.page, boxShadow: "0 30px 80px rgba(0,0,0,0.6)" }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <span style={T.h2}>{editing ? "Встреча" : "Новая встреча"}</span>
+          <IconBtn title="Закрыть" onClick={onClose}>
+            <X {...ICON} />
+          </IconBtn>
+        </div>
+        <input
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full bg-transparent outline-none placeholder:text-[#5E6068]"
+          style={{ ...fieldStyle, height: 52, fontSize: 16 }}
+          placeholder="Название встречи"
+        />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="col-span-2 flex min-w-0 flex-col sm:col-span-1">
+            <label htmlFor="meeting-form-date" style={labelStyle}>
+              Дата
+            </label>
+            <DatePicker id="meeting-form-date" ariaLabel="Дата" value={day} onChange={setDay} weekStartsMonday={settings.weekStartsMonday} />
+          </div>
+          <label className="flex min-w-0 flex-col">
+            <span style={labelStyle}>Время</span>
+            <input type="time" required={!editing} value={time} onChange={(e) => setTime(e.target.value)} className="min-w-0 outline-none" style={{ ...fieldStyle, colorScheme: "dark" }} />
+          </label>
+          <div className="flex min-w-0 flex-col">
+            <span style={labelStyle}>Длительность</span>
+            <Select
+              ariaLabel="Длительность"
+              value={duration}
+              onChange={setDuration}
+              options={DURATIONS.some((o) => o.value === duration) ? DURATIONS : [...DURATIONS, { value: duration, label: formatDuration(Number(duration)) }]}
+            />
+          </div>
+        </div>
+        <label className="flex min-w-0 flex-col">
+          <span style={labelStyle}>Ссылка на звонок</span>
+          <input
+            type="url"
+            inputMode="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="Zoom, Google Meet, Telegram…"
+            className="min-w-0 outline-none placeholder:text-[#5E6068]"
+            style={fieldStyle}
+          />
+        </label>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex min-w-0 flex-col">
+            <span style={labelStyle}>Клиент</span>
+            <Select
+              ariaLabel="Клиент"
+              value={clientId}
+              onChange={setClientId}
+              options={[{ value: "", label: "Без клиента" }, ...clients.map((c) => ({ value: c.id, label: c.name }))]}
+            />
+          </div>
+          <div className="flex min-w-0 flex-col">
+            <span style={labelStyle}>Повтор</span>
+            <Select ariaLabel="Повтор" value={recurrence} onChange={setRecurrence} options={RECURRENCE} />
+          </div>
+        </div>
+        {mt?.source === "gcal" && (
+          <div style={{ ...T.foot, color: C.text3 }}>Из Google Календаря — при следующей синхронизации календарь может вернуть свою версию.</div>
+        )}
+        <div className="flex items-center gap-2">
+          {mt && (
+            <button
+              type="button"
+              onClick={remove}
+              className="inline-flex items-center gap-2 px-4 transition-colors hover:bg-[#2A1A1A]"
+              style={{ height: 44, borderRadius: 999, color: TONE.red.fg, fontSize: 14 }}
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+              Удалить
+            </button>
+          )}
+          <span className="flex-1" />
+          <Btn kind="ghost" onClick={onClose}>
+            Отмена
+          </Btn>
+          <Btn type="submit" disabled={!ready}>
+            {mt ? "Сохранить" : "Добавить встречу"}
+          </Btn>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/** «Встреча» in the topbar — outline pill next to «Новая задача». */
+export function NewMeetingBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <Btn kind="outline" icon={<CalendarClock size={16} strokeWidth={1.75} />} onClick={onClick}>
+      Встреча
     </Btn>
   );
 }

@@ -61,7 +61,7 @@ import {
 import { useDashboardModel, type DashboardModel, type TodayRow } from "@/design-lab/screens/dashboardModel";
 import { MeetingBell, MobileNav, Sidebar } from "@/design-lab/screens/_kit/craftShell";
 import { TagChips } from "@/design-lab/screens/_kit/controls";
-import { PrioChip, ProjectChip, TaskEditor, useTasksModel, type TaskDraft } from "@/design-lab/screens/tasks/craft/_parts";
+import { MeetingEditor, PrioChip, ProjectChip, TaskEditor, useTasksModel, type TaskDraft } from "@/design-lab/screens/tasks/craft/_parts";
 import { useData } from "@/store/DataProvider";
 import { localDayStr, todayStr } from "@/lib/format";
 import { dueMeetingAlerts, meetingStart, MEETING_LEAD_MIN } from "@/lib/meetingAlerts";
@@ -630,7 +630,7 @@ function demoMeetings(now: number): MeetingView[] {
   ].map((x) => ({ ...x, time: hhmm(x.start) }));
 }
 
-function MeetingCard({ mt, now, onToggle }: { mt: MeetingView; now: number; onToggle?: () => void }) {
+function MeetingCard({ mt, now, onToggle, onOpen }: { mt: MeetingView; now: number; onToggle?: () => void; onOpen?: () => void }) {
   const end = mt.start + mt.durationMin * MIN;
   const live = !mt.done && mt.start <= now && now < end;
   const soonMin = Math.ceil((mt.start - now) / MIN);
@@ -667,9 +667,15 @@ function MeetingCard({ mt, now, onToggle }: { mt: MeetingView; now: number; onTo
         )}
       </div>
       <div className="min-w-0">
-        <div className="truncate" style={{ ...T.body, fontWeight: 500, color: C.text }}>
+        <button
+          type="button"
+          onClick={onOpen}
+          title="Открыть встречу"
+          className="block w-full truncate text-left transition-colors hover:text-[#5AA9FF]"
+          style={{ ...T.body, fontWeight: 500, color: C.text }}
+        >
           {mt.title}
-        </div>
+        </button>
         {mt.sub && (
           <div className="mt-1 truncate" style={{ ...T.foot, color: C.text3 }}>
             {mt.sub}
@@ -688,6 +694,9 @@ function MeetingCard({ mt, now, onToggle }: { mt: MeetingView; now: number; onTo
 
 function MeetingsTile({ m }: { m: DashboardModel }) {
   const now = useNow();
+  /** "new" — «+» в шапке плитки; id — клик по названию встречи. */
+  const [editing, setEditing] = useState<string | null>(null);
+  const closeEditor = useCallback(() => setEditing(null), []);
   const real: MeetingView[] = m.meetings.slice(0, 4).map((mt) => ({
     id: mt.id,
     title: mt.title,
@@ -706,12 +715,18 @@ function MeetingsTile({ m }: { m: DashboardModel }) {
         icon={<CalendarClock size={18} strokeWidth={1.75} />}
         title="Встречи"
         sub={list.length ? `${list.length} ${plural(list.length, "встреча", "встречи", "встреч")} впереди` : "Встреч впереди нет"}
+        right={
+          <IconBtn title="Новая встреча" size={36} onClick={() => setEditing("new")}>
+            <Plus size={18} strokeWidth={1.75} />
+          </IconBtn>
+        }
       />
       <div className="mt-4 flex flex-col gap-2">
         {list.map((mt) => (
-          <MeetingCard key={mt.id} mt={mt} now={now} onToggle={() => m.actions.toggleMeeting(mt.id)} />
+          <MeetingCard key={mt.id} mt={mt} now={now} onToggle={() => m.actions.toggleMeeting(mt.id)} onOpen={() => setEditing(mt.id)} />
         ))}
       </div>
+      {editing && <MeetingEditor key={editing} meetingId={editing === "new" ? undefined : editing} onClose={closeEditor} />}
     </Tile>
   );
 }

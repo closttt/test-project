@@ -34,6 +34,8 @@ import {
   DatePop,
   LISTS,
   ListTabs,
+  MeetingEditor,
+  NewMeetingBtn,
   NewTaskBtn,
   PRIO_DOT,
   PRIO_LABEL,
@@ -829,6 +831,8 @@ export default function TasksByTime() {
   const [tag, setTag] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TaskDraft | null>(null);
+  const [meetingOpen, setMeetingOpen] = useState(false);
+  const closeMeeting = useCallback(() => setMeetingOpen(false), []);
   const closeEditor = useCallback(() => {
     setEditId(null);
     setDraft(null);
@@ -865,7 +869,12 @@ export default function TasksByTime() {
       icon={CircleCheckBig}
       subtitle={`${openCount} ${plural(openCount, "открытая", "открытые", "открытых")}${overdue ? ` · ${overdue} просрочено` : ""}`}
       search={{ value: query, onChange: setQuery, placeholder: "Поиск задач" }}
-      actions={<NewTaskBtn onClick={newTask} />}
+      actions={
+        <>
+          <NewMeetingBtn onClick={() => setMeetingOpen(true)} />
+          <NewTaskBtn onClick={newTask} />
+        </>
+      }
     >
       <div data-lab-block="views" className="mt-6 flex flex-wrap items-center justify-between gap-3">
         <ListTabs items={VIEWS} value={view} onChange={setView} />
@@ -922,6 +931,7 @@ export default function TasksByTime() {
       )}
 
       {(editId || draft) && <TaskEditor taskId={editId} draft={draft ?? undefined} m={m} onClose={closeEditor} />}
+      {meetingOpen && <MeetingEditor onClose={closeMeeting} />}
     </CraftShell>
   );
 }
