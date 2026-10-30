@@ -3,7 +3,7 @@
  * shared by every other screen so they all live in one product:
  *
  *   ┌ sidebar (panel 24) ┐ ┌ page panel 24 ───────────────────────────────────────┐
- *   │ logo               │ │ Рабочий стол / <crumb>          date · bell · actions │
+ *   │ logo               │ │ Рабочий стол / <crumb>     date · AI · bell · actions │
  *   │ search pill        │ │ [tile] <Title>  subtitle                    right    │
  *   │ nav (active tinted)│ │ children                                              │
  *   │ settings           │ │                                                       │
@@ -19,6 +19,7 @@ import {
   Bell,
   BellRing,
   BookOpen,
+  Bot,
   CalendarClock,
   ChartColumn,
   History,
@@ -37,6 +38,7 @@ import {
 
 import { Btn, C, IconBtn, Logo, R, T, dashed, rootStyle } from "@/design-lab/screens/_kit/craft";
 import { useData } from "@/store/DataProvider";
+import { useUI } from "@/store/UIProvider";
 import { NAV_ITEMS, loadNavHidden, loadNavOrder } from "@/lib/navConfig";
 import { hasUnseen } from "@/lib/changelog";
 import { isOverdue, isToday, localDayStr } from "@/lib/format";
@@ -238,6 +240,16 @@ export function MobileNav({ active }: { active: NavId }) {
   );
 }
 
+/** Opens the AI assistant drawer (components/AiAssistant, mounted in GlobalLayout); also «a». */
+function AssistantBtn() {
+  const { setAssistantOpen } = useUI();
+  return (
+    <IconBtn title="ИИ-ассистент (a)" onClick={() => setAssistantOpen(true)}>
+      <Bot {...ICON} color={C.accent} />
+    </IconBtn>
+  );
+}
+
 // ── Notifications bell ──────────────────────────────────────────────────────────────────────
 
 const MIN = 60 * 1000;
@@ -424,6 +436,7 @@ export function CraftShell({
             <span className="mr-2 hidden whitespace-nowrap md:inline" style={{ ...T.body, color: C.text3 }}>
               {DATE_LABEL()}
             </span>
+            <AssistantBtn />
             <MeetingBell />
             {actions}
           </div>
