@@ -12,6 +12,9 @@
  *   │  12 задач · 3 просроч.  ● Высокий                                       │
  *   └────────────────────────────────────────────────────────────────────────┘
  *
+ * Order: by priority (высокий → низкий → без приоритета); finished projects are one block, at the
+ * end or the start — the «Завершённые» switch by the title, remembered per browser.
+ *
  * A project with status «Завершён» carries a big green «Завершено» on its tile and a quieter folder
  * (full again on hover) — it still opens like any other.
  *
@@ -22,11 +25,31 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Archive, Check, Plus } from "lucide-react";
 
-import { Btn, C, R, T, TONE, plural } from "@/design-lab/screens/_kit/craft";
+import { Btn, C, PillTabs, R, T, TONE, plural } from "@/design-lab/screens/_kit/craft";
 import { PRIORITY_META } from "@/types";
 import { CraftShell } from "@/design-lab/screens/_kit/craftShell";
 import { Folder } from "./Folder";
-import { PRIO_DOT, useProjectsScreen, type ProjectRow, type ProjectsScreen } from "./_parts";
+import { PRIO_DOT, PRIORITY_RANK, useProjectsScreen, type ProjectRow, type ProjectsScreen } from "./_parts";
+
+type DonePlace = "end" | "start";
+const DONE_KEY = "crm-projects-done-place";
+
+function loadDonePlace(): DonePlace {
+  try {
+    return localStorage.getItem(DONE_KEY) === "start" ? "start" : "end";
+  } catch {
+    return "end";
+  }
+}
+
+/** Finished projects as one block (end or start), each group by priority; ties keep their order. */
+function ordered(rows: ProjectRow[], place: DonePlace): ProjectRow[] {
+  const rank = (r: ProjectRow) => PRIORITY_RANK[r.project.priority ?? 0];
+  const byPrio = (list: ProjectRow[]) => [...list].sort((a, b) => rank(a) - rank(b));
+  const done = byPrio(rows.filter((r) => r.project.status === "done"));
+  const rest = byPrio(rows.filter((r) => r.project.status !== "done"));
+  return place === "end" ? [...rest, ...done] : [...done, ...rest];
+}
 
 const Sep = () => <span aria-hidden className="shrink-0" style={{ width: 3, height: 3, borderRadius: 9, background: C.text3 }} />;
 
@@ -148,11 +171,40 @@ function FolderCard({ r, s, first }: { r: ProjectRow; s: ProjectsScreen; first: 
 
 export default function ProjectsAsNow() {
   const s = useProjectsScreen();
+  const [place, setPlace] = useState<DonePlace>(loadDonePlace);
+  const changePlace = (p: DonePlace) => {
+    setPlace(p);
+    try {
+      localStorage.setItem(DONE_KEY, p);
+    } catch {
+      /* private mode — the choice just isn't remembered */
+    }
+  };
+  const rows = ordered(s.visible, place);
+  const hasDone = s.all.some((r) => r.project.status === "done");
   return (
     <CraftShell
       active="projects"
       crumb="Проекты"
       search={s.search}
+      titleRight={
+        hasDone && (
+          <span className="flex items-center gap-2">
+            <span className="hidden sm:inline" style={{ ...T.body, color: C.text3 }}>
+              Завершённые
+            </span>
+            <PillTabs
+              size={36}
+              value={place}
+              onChange={changePlace}
+              items={[
+                { id: "end", label: "В конце" },
+                { id: "start", label: "В начале" },
+              ]}
+            />
+          </span>
+        )
+      }
       actions={
         <Btn icon={<Plus size={16} strokeWidth={2} />} onClick={() => s.create()}>
           Новый проект
@@ -182,7 +234,7 @@ export default function ProjectsAsNow() {
         </div>
       ) : (
         <div data-lab-block="grid" className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[1800px]:grid-cols-6">
-          {s.visible.map((r, i) => (
+          {rows.map((r, i) => (
             <FolderCard key={r.project.id} r={r} s={s} first={i === 0} />
           ))}
         </div>

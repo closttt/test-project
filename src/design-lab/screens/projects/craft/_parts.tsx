@@ -39,7 +39,7 @@ export const HEALTH_LABEL: Record<HealthLevel, string> = {
 };
 export const HEALTH_TONE: Record<HealthLevel, Tone> = { "off-track": "red", "at-risk": "amber", "on-track": "blue", done: "green", empty: "neutral" };
 const HEALTH_RANK: Record<HealthLevel, number> = { "off-track": 0, "at-risk": 1, "on-track": 2, done: 3, empty: 4 };
-const PRIORITY_RANK: Record<number, number> = { 1: 0, 2: 1, 3: 2, 0: 3 };
+export const PRIORITY_RANK: Record<number, number> = { 1: 0, 2: 1, 3: 2, 0: 3 };
 
 export const PRIOS: { p: Priority; label: string }[] = [
   { p: 1, label: "Высокий" },
