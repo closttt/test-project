@@ -1,20 +1,16 @@
 /**
- * Задачи · Craft Dark · v1 «По срокам» — round 3 (owner's notes): the screen opens on view tabs
- * «Неделя · Список · Канбан» (remembered per browser) instead of stacking everything.
- *   · Неделя — the app's 7-day system (one column per day, ‹ › between weeks, overdue collected in
- *     today's column, drag a card onto a day, add straight into a day) plus «Бэклог» under the days:
- *     tasks without a date; dropping a card there clears its date.
- *   · Список — smart-list pills, quick add and the grouped list of all tasks, with the side rail
- *     (norm ring, sorting, projects as filters).
- *   · Канбан — the app's priority board: Высокий · Средний · Низкий · Без приоритета; dragging a
- *     card to another column changes its priority.
- * Every card and row opens the task editor on click; the date chip on a card picks a date in place.
+ * Задачи · Craft Dark · v1 «По срокам» — the week board (owner, 2026-10-31: «Список» and «Канбан»
+ * removed). The app's 7-day system: one column per day, ‹ › between weeks, overdue collected in
+ * today's column, drag a card onto a day, add straight into a day. Under the days, «Бэклог» —
+ * tasks without a date, grouped by priority or project; dropping a card there clears its date.
+ * Every card opens the task editor on click; the date chip on a card picks a date in place.
  *
  *   ┌ title ─────────────────────────────────────────────────────────────────┐
- *   │ [Неделя] [Список] [Канбан]                                [Все проекты ▾]│
+ *   │ Задачи                                                    [Все проекты ▾]│
  *   │ ┌ Неделя  ‹ 5–11 окт. ›                              n задач на неделе ┐ │
  *   │ │ Пн │ Вт │ Ср │ Чт │ Пт │ Сб │ Вс(today)   — cards, «+ Задача»          │ │
- *   │ │ Бэклог n — cards without a date, «+ Задача»                           │ │
+ *   │ │ ▾ Бэклог n   ● Высокий 4 ● Средний 9 …   [По приоритету | По проекту]  │ │
+ *   │ │   ● Высокий 4 — cards … «Ещё N», «+ Задача · Высокий»                  │ │
  *   │ └───────────────────────────────────────────────────────────────────────┘ │
  *   └──────────────────────────────────────────────────────────────────────────┘
  */
@@ -62,39 +58,6 @@ const KANBAN_CAP = 8;
 const DOT: Record<string, string> = { overdue: C.amber, today: C.accent, tomorrow: C.accent };
 const DROP_BG = "rgba(10,132,255,0.16)";
 const COL_BG = "rgba(0,0,0,0.22)";
-
-type Sort = "due" | "prio" | "project" | "title";
-const SORTS: { key: Sort; label: string }[] = [
-  { key: "due", label: "По сроку" },
-  { key: "prio", label: "По приоритету" },
-  { key: "project", label: "По проекту" },
-  { key: "title", label: "По названию" },
-];
-
-type View = "week" | "list" | "kanban";
-const VIEWS: { key: View; label: string }[] = [
-  { key: "week", label: "Неделя" },
-  { key: "list", label: "Список" },
-  { key: "kanban", label: "Канбан" },
-];
-const VIEW_KEY = "crm-tasks-craft-view-v1";
-
-/** Remembered view — storage can be blocked (private window), so every access is guarded. */
-function loadView(): View {
-  try {
-    const v = localStorage.getItem(VIEW_KEY);
-    return v === "list" || v === "kanban" ? v : "week";
-  } catch {
-    return "week";
-  }
-}
-function saveView(v: View) {
-  try {
-    localStorage.setItem(VIEW_KEY, v);
-  } catch {
-    /* storage unavailable — the tab still switches, it just isn't remembered */
-  }
-}
 
 interface Group {
   key: string;
@@ -450,22 +413,63 @@ function DayColumn({
   );
 }
 
-function Backlog({ items, m, pid, onOpen }: { items: Task[]; m: TasksModel; pid: string | null | undefined; onOpen: (t: Task) => void }) {
+type BacklogGroupBy = "prio" | "project";
+type BacklogUi = { by: BacklogGroupBy; collapsed: boolean };
+const BACKLOG_UI_KEY = "crm-tasks-backlog-ui-v1";
+const PRIO_ORDER: Priority[] = [1, 2, 3, 0];
+
+function loadBacklogUi(): BacklogUi {
+  try {
+    const v = JSON.parse(localStorage.getItem(BACKLOG_UI_KEY) ?? "{}") as Partial<BacklogUi>;
+    return { by: v.by === "project" ? "project" : "prio", collapsed: v.collapsed === true };
+  } catch {
+    return { by: "prio", collapsed: false };
+  }
+}
+function saveBacklogUi(v: BacklogUi) {
+  try {
+    localStorage.setItem(BACKLOG_UI_KEY, JSON.stringify(v));
+  } catch {
+    /* storage unavailable — the choice just isn't remembered */
+  }
+}
+
+interface BacklogGroup {
+  key: string;
+  label: string;
+  dot?: string;
+  items: Task[];
+  /** What a card dropped on this group (or added in it) gets, besides losing its date. */
+  patch: Partial<Task>;
+}
+
+function backlogGroups(items: Task[], by: BacklogGroupBy, m: TasksModel): BacklogGroup[] {
+  if (by === "prio")
+    return PRIO_ORDER.map((p) => ({ key: `p${p}`, label: PRIO_LABEL[p], dot: PRIO_DOT[p], items: items.filter((t) => t.priority === p), patch: { priority: p } }));
+  return [
+    ...m.projects.map((p) => ({ key: p.id, label: p.name, items: items.filter((t) => t.projectId === p.id), patch: { projectId: p.id } as Partial<Task> })),
+    { key: "none", label: "Без проекта", items: items.filter((t) => !t.projectId || !m.projectName.has(t.projectId)), patch: { projectId: undefined } },
+  ];
+}
+
+/** One group of the backlog: its own drop target, at most a row or two of cards until «Ещё». */
+function BacklogSection({ g, m, pid, onOpen }: { g: BacklogGroup; m: TasksModel; pid: string | null | undefined; onOpen: (t: Task) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: undefined }));
-  const shown = expanded ? items : items.slice(0, BACKLOG_CAP);
+  const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: undefined, ...g.patch }));
+  const shown = expanded ? g.items : g.items.slice(0, BACKLOG_CAP);
+  const open = g.items.filter((t) => !t.done).length;
   return (
-    <div
-      {...props}
-      data-lab-block="backlog"
-      className="flex min-w-0 flex-col gap-2 p-2 transition-colors duration-150"
-      style={{ borderRadius: R.inner, background: over ? DROP_BG : COL_BG }}
-    >
-      <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-2" style={{ minHeight: 32 }}>
-        <div className="truncate" style={{ fontSize: 15, lineHeight: 1.3, fontWeight: 500, color: C.text }}>
-          Бэклог<span style={{ fontWeight: 400, color: C.text3 }}> · без срока</span>
-        </div>
-        {items.length > 0 && <span style={{ ...T.body, ...T.num, fontWeight: 400, color: C.text3 }}>{items.length}</span>}
+    <div {...props} className="flex min-w-0 flex-col gap-2 p-2 transition-colors duration-150" style={{ borderRadius: R.small, background: over ? DROP_BG : "transparent" }}>
+      <div className="flex items-center gap-2 px-2" style={{ height: 28 }}>
+        {g.dot ? (
+          <span className="shrink-0" style={{ width: 8, height: 8, borderRadius: 9, background: g.dot }} />
+        ) : (
+          <FolderKanban size={14} strokeWidth={1.75} color={C.text3} className="shrink-0" />
+        )}
+        <span className="truncate" style={{ fontSize: 14, fontWeight: 500, color: C.text }}>
+          {g.label}
+        </span>
+        <span style={{ ...T.body, ...T.num, fontWeight: 400, color: C.text3 }}>{open}</span>
       </div>
       {shown.length > 0 && (
         <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 216px), 1fr))" }}>
@@ -474,8 +478,87 @@ function Backlog({ items, m, pid, onOpen }: { items: Task[]; m: TasksModel; pid:
           ))}
         </div>
       )}
-      {items.length > BACKLOG_CAP && <MoreBtn expanded={expanded} hidden={items.length - shown.length} onClick={() => setExpanded((x) => !x)} />}
-      <DayAdd placeholder="Задача без срока" onAdd={(v) => m.actions.add(v, { projectId: pid ?? undefined })} />
+      {g.items.length > BACKLOG_CAP && <MoreBtn expanded={expanded} hidden={g.items.length - shown.length} onClick={() => setExpanded((x) => !x)} />}
+      <DayAdd placeholder={`Задача · ${g.label}`} onAdd={(v) => m.actions.add(v, { projectId: pid ?? undefined, ...g.patch })} />
+    </div>
+  );
+}
+
+/**
+ * «Бэклог» — tasks without a date, under the week. Built for a hundred tasks: grouped by priority or
+ * by project (each group its own drop target: a card dropped there loses its date and takes the
+ * group's priority / project), a priority filter, and the whole block folds away. The grouping and
+ * the fold are remembered per browser.
+ */
+function Backlog({ items, m, pid, onOpen }: { items: Task[]; m: TasksModel; pid: string | null | undefined; onOpen: (t: Task) => void }) {
+  const [ui, setUi] = useState<BacklogUi>(loadBacklogUi);
+  const [prio, setPrio] = useState<Priority | null>(null);
+  const change = (p: Partial<BacklogUi>) => {
+    const next = { ...ui, ...p };
+    setUi(next);
+    saveBacklogUi(next);
+  };
+  const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: undefined }));
+  const openN = items.filter((t) => !t.done).length;
+  const list = prio === null ? items : items.filter((t) => t.priority === prio);
+  const groups = backlogGroups(list, ui.by, m).filter((g) => g.items.length > 0);
+  return (
+    <div
+      {...props}
+      data-lab-block="backlog"
+      className="flex min-w-0 flex-col gap-2 p-2 transition-colors duration-150"
+      style={{ borderRadius: R.inner, background: over && ui.collapsed ? DROP_BG : COL_BG }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-2 pb-1 pt-2" style={{ minHeight: 36 }}>
+        <button type="button" onClick={() => change({ collapsed: !ui.collapsed })} className="flex min-w-0 items-center gap-2 text-left">
+          <ChevronDown size={16} strokeWidth={1.75} color={C.text3} className="shrink-0" style={{ transform: ui.collapsed ? "rotate(-90deg)" : undefined, transition: "transform .15s" }} />
+          <span className="truncate" style={{ fontSize: 15, lineHeight: 1.3, fontWeight: 500, color: C.text }}>
+            Бэклог<span style={{ fontWeight: 400, color: C.text3 }}> · без срока</span>
+          </span>
+          {openN > 0 && <span style={{ ...T.body, ...T.num, fontWeight: 400, color: C.text3 }}>{openN}</span>}
+        </button>
+        {!ui.collapsed && items.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1">
+              {PRIO_ORDER.map((p) => {
+                const n = items.filter((t) => t.priority === p && !t.done).length;
+                if (!n && prio !== p) return null;
+                const on = prio === p;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPrio(on ? null : p)}
+                    className={`inline-flex items-center gap-1.5 whitespace-nowrap px-3 transition-colors ${on ? "" : "hover:bg-[#19191C]"}`}
+                    style={{ height: 32, borderRadius: 999, fontSize: 13, background: on ? tint : "transparent", color: on ? C.text : C.text2 }}
+                  >
+                    <span className="shrink-0" style={{ width: 6, height: 6, borderRadius: 9, background: PRIO_DOT[p] }} />
+                    {PRIO_LABEL[p]}
+                    <span style={{ ...T.num, fontWeight: 400, color: on ? "#5AA9FF" : C.text3 }}>{n}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <ListTabs
+              size={32}
+              items={[
+                { key: "prio" as const, label: "По приоритету" },
+                { key: "project" as const, label: "По проекту" },
+              ]}
+              value={ui.by}
+              onChange={(by) => change({ by })}
+            />
+          </div>
+        )}
+      </div>
+      {!ui.collapsed && (
+        <>
+          {groups.map((g) => (
+            <BacklogSection key={`${ui.by}-${g.key}`} g={g} m={m} pid={pid} onOpen={onOpen} />
+          ))}
+          {groups.length === 0 && <DayAdd placeholder="Задача без срока" onAdd={(v) => m.actions.add(v, { projectId: pid ?? undefined })} />}
+        </>
+      )}
     </div>
   );
 }
@@ -507,7 +590,7 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
     pid ? [] : meetings.filter((mt) => mt.date === date && (!query || mt.title.toLowerCase().includes(query.toLowerCase()))).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
   return (
-    <section data-lab-block="week" className="mt-4 flex min-w-0 flex-col gap-4 p-4 sm:p-6" style={{ background: C.card, borderRadius: R.card }}>
+    <section data-lab-block="week" className="mt-6 flex min-w-0 flex-col gap-4 p-4 sm:p-6" style={{ background: C.card, borderRadius: R.card }}>
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex items-center gap-3">
           <h2 style={T.title}>Неделя</h2>
@@ -562,184 +645,6 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
   );
 }
 
-// ── Kanban — the app's priority board ─────────────────────────────────────────────────────────
-
-const KANBAN: { p: Priority; label: string }[] = [
-  { p: 1, label: "Высокий" },
-  { p: 2, label: "Средний" },
-  { p: 3, label: "Низкий" },
-  { p: 0, label: "Без приоритета" },
-];
-
-function KanbanColumn({ p, label, items, m, pid, onOpen, markFirst }: { p: Priority; label: string; items: Task[]; m: TasksModel; pid: string | null | undefined; onOpen: (t: Task) => void; markFirst: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const { over, props } = useDrop((id) => m.actions.update(id, { priority: p }));
-  const shown = expanded ? items : items.slice(0, KANBAN_CAP);
-  return (
-    <div
-      {...props}
-      className="flex min-w-0 snap-start flex-col gap-2 p-2 transition-colors duration-150"
-      style={{ minHeight: 360, borderRadius: R.inner, background: over ? DROP_BG : COL_BG }}
-    >
-      <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-2" style={{ minHeight: 32 }}>
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0" style={{ width: 8, height: 8, borderRadius: 9, background: PRIO_DOT[p] }} />
-          <span className="truncate" style={{ fontSize: 15, lineHeight: 1.3, fontWeight: 500 }}>
-            {label}
-          </span>
-        </div>
-        {items.length > 0 && <span style={{ ...T.body, ...T.num, fontWeight: 400, color: C.text3 }}>{items.length}</span>}
-      </div>
-      {shown.map((t, i) => (
-        <TaskCard key={t.id} t={t} m={m} onOpen={() => onOpen(t)} mark={markFirst && i === 0} showDate />
-      ))}
-      {items.length > KANBAN_CAP && <MoreBtn expanded={expanded} hidden={items.length - shown.length} onClick={() => setExpanded((x) => !x)} />}
-      <div className="mt-auto">
-        <DayAdd onAdd={(v) => m.actions.add(v, { priority: p, projectId: pid ?? undefined })} />
-      </div>
-    </div>
-  );
-}
-
-function Kanban({ m, query, pid, onOpen }: { m: TasksModel; query: string; pid: string | null | undefined; onOpen: (t: Task) => void }) {
-  const pool = m.filter({ list: "all", query, projectId: pid });
-  const cols = KANBAN.map((c) => ({ ...c, items: pool.filter((t) => t.priority === c.p) }));
-  const firstCol = cols.findIndex((c) => c.items.length > 0);
-  const openN = pool.filter((t) => !t.done).length;
-  return (
-    <section data-lab-block="kanban" className="mt-4 flex min-w-0 flex-col gap-4 p-4 sm:p-6" style={{ background: C.card, borderRadius: R.card }}>
-      <header className="flex items-center justify-between gap-4">
-        <h2 style={T.title}>Канбан</h2>
-        <span className="whitespace-nowrap" style={{ ...T.body, color: C.text3 }}>
-          {openN} {plural(openN, "открытая", "открытые", "открытых")}
-        </span>
-      </header>
-      <div className="-mx-1 snap-x overflow-x-auto px-1 pb-1">
-        <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(4, minmax(240px,1fr))" }}>
-          {cols.map((c, ci) => (
-            <KanbanColumn key={c.p} p={c.p} label={c.label} items={c.items} m={m} pid={pid} onOpen={onOpen} markFirst={ci === firstCol} />
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ── General list ──────────────────────────────────────────────────────────────────────────────
-
-function doneGroups(items: Task[]): Group[] {
-  const today = todayStr();
-  const yesterday = addDays(new Date(), -1);
-  const map = new Map<string, Task[]>();
-  for (const t of items) {
-    const k = t.completedAt ? localDayStr(new Date(t.completedAt)) : "—";
-    map.set(k, [...(map.get(k) ?? []), t]);
-  }
-  return [...map.entries()].map(([k, xs]) => ({
-    key: k,
-    label: k === today ? "Сегодня" : k === yesterday ? "Вчера" : k === "—" ? "Без даты" : formatDate(k),
-    items: xs,
-  }));
-}
-
-function sortGroups(items: Task[], sort: Sort, m: TasksModel): Group[] {
-  if (sort === "due") return groupByTime(items).map((g) => ({ key: g.key, label: g.label, items: m.freshFirst(g.items) }));
-  if (sort === "prio")
-    return ([1, 2, 3, 0] as const)
-      .map((p) => ({ key: `p${p}`, label: PRIO_LABEL[p], items: m.freshFirst(items.filter((t) => t.priority === p)) }))
-      .filter((g) => g.items.length);
-  if (sort === "project")
-    return [
-      ...m.projects.map((p) => ({ key: p.id, label: p.name, items: m.freshFirst(items.filter((t) => t.projectId === p.id)) })),
-      { key: "noproj", label: "Без проекта", items: m.freshFirst(items.filter((t) => !t.projectId)) },
-    ].filter((g) => g.items.length);
-  return [{ key: "abc", label: "", items: m.freshFirst([...items].sort((a, b) => a.title.localeCompare(b.title, "ru"))) }];
-}
-
-function GroupBlock({ g, m, onOpen, markRow, flat }: { g: Group; m: TasksModel; onOpen: (t: Task) => void; markRow?: boolean; flat?: boolean }) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [all, setAll] = useState(false);
-  const cap = flat ? 30 : GROUP_CAP;
-  const shown = all ? g.items : g.items.slice(0, cap);
-  const hidden = g.items.length - shown.length;
-  const openIds = g.items.filter((t) => !t.done).map((t) => t.id);
-  const dot = DOT[g.key] ?? (g.key.startsWith("p") && g.key.length === 2 ? PRIO_DOT[Number(g.key[1])] : "#4A4C54");
-  return (
-    <div id={`group-${g.key}`} style={{ scrollMarginTop: 20 }}>
-      {!flat && (
-        <div className="flex items-center gap-3 px-6" style={{ height: 52, ...dashed }}>
-          <button type="button" onClick={() => setCollapsed((c) => !c)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-            <span className="shrink-0" style={{ width: 8, height: 8, borderRadius: 9, background: dot }} />
-            <span className="truncate" style={{ ...T.body, fontWeight: 500, color: g.key === "overdue" ? TONE.amber.fg : C.text }}>
-              {g.label}
-            </span>
-            <span style={{ ...T.body, ...T.num, fontWeight: 400, color: C.text3 }}>{g.items.length}</span>
-          </button>
-          {g.key === "overdue" && openIds.length > 0 && (
-            <Btn kind="ghost" size={36} onClick={() => m.actions.bulkReschedule(openIds, 0)}>
-              Всё на сегодня
-            </Btn>
-          )}
-          <button
-            type="button"
-            aria-label={collapsed ? "Развернуть" : "Свернуть"}
-            onClick={() => setCollapsed((c) => !c)}
-            className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#19191C]"
-            style={{ color: C.text3 }}
-          >
-            <ChevronDown size={16} strokeWidth={1.75} style={{ transform: collapsed ? "rotate(-90deg)" : undefined, transition: "transform .15s" }} />
-          </button>
-        </div>
-      )}
-      {!collapsed && (
-        <>
-          {shown.map((t, i) => (
-            <div key={t.id} data-lab-block={markRow && i === 0 ? "row" : undefined}>
-              <TaskLine t={t} m={m} onOpen={() => onOpen(t)} />
-            </div>
-          ))}
-          {g.items.length > cap && (
-            <button
-              type="button"
-              onClick={() => setAll((a) => !a)}
-              className="flex w-full items-center px-6 text-left transition-colors hover:bg-[#17171A]"
-              style={{ height: 48, ...dashed, ...T.body, color: C.text2 }}
-            >
-              {all ? "Свернуть" : `Ещё ${hidden} ${plural(hidden, "задача", "задачи", "задач")}`}
-            </button>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Rail — norm, sorting, projects ────────────────────────────────────────────────────────────
-
-function RailList<K extends string>({ items, value, onChange }: { items: { id: K; name: string; n?: number }[]; value: K; onChange: (k: K) => void }) {
-  return (
-    <div className="flex flex-col gap-0.5 px-2 pb-1">
-      {items.map((r) => {
-        const on = value === r.id;
-        return (
-          <button
-            key={r.id || "all"}
-            type="button"
-            onClick={() => onChange(r.id)}
-            className={`flex items-center gap-3 px-3 text-left transition-colors ${on ? "" : "hover:bg-[#19191C]"}`}
-            style={{ height: 40, borderRadius: R.small, background: on ? tint : undefined }}
-          >
-            <span className="min-w-0 flex-1 truncate" style={{ ...T.body, color: on ? C.text : C.text2 }}>
-              {r.name}
-            </span>
-            {r.n !== undefined && <span style={{ ...T.body, ...T.num, fontWeight: 400, color: on ? "#5AA9FF" : C.text3 }}>{r.n}</span>}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function projectRows(m: TasksModel) {
   const open = m.tasks.filter((t) => !t.done);
   return [
@@ -749,42 +654,7 @@ function projectRows(m: TasksModel) {
   ];
 }
 
-function Rail({ m, project, onProject, sort, onSort }: { m: TasksModel; project: string; onProject: (id: string) => void; sort: Sort; onSort: (s: Sort) => void }) {
-  const pct = Math.min(100, (m.closedToday / m.goal) * 100);
-  return (
-    <aside className="flex min-w-0 flex-col gap-3">
-      <section data-lab-block="norm" className="flex items-center gap-4 p-5" style={{ background: C.card, borderRadius: R.card }}>
-        <Ring pct={pct} size={64} stroke={5}>
-          <span style={{ ...T.foot, ...T.num, color: C.text2 }}>{Math.round(pct)}%</span>
-        </Ring>
-        <div className="min-w-0">
-          <div style={{ ...T.num, fontSize: 32, lineHeight: 1 }}>
-            {m.closedToday}
-            <span style={{ color: C.text3, fontWeight: 400 }}>/{m.goal}</span>
-          </div>
-          <div style={{ ...T.foot, color: C.text3, marginTop: 6 }}>закрыто сегодня из нормы</div>
-        </div>
-      </section>
-
-      <section data-lab-block="sort" className="flex flex-col py-2" style={{ background: C.card, borderRadius: R.card }}>
-        <h2 className="px-5 pb-2 pt-3" style={T.title}>
-          Сортировка
-        </h2>
-        <RailList items={SORTS.map((s) => ({ id: s.key, name: s.label }))} value={sort} onChange={onSort} />
-      </section>
-
-      <section data-lab-block="projects" className="flex flex-col py-2" style={{ background: C.card, borderRadius: R.card }}>
-        <div className="flex items-center gap-2.5 px-5 pb-2 pt-3">
-          <FolderKanban size={16} strokeWidth={1.75} color={C.text2} />
-          <h2 style={T.title}>Проекты</h2>
-        </div>
-        <RailList items={projectRows(m)} value={project} onChange={onProject} />
-      </section>
-    </aside>
-  );
-}
-
-/** Project filter for the week and kanban views (the list keeps it in its rail) — a quiet pill select. */
+/** Project filter for the week — a quiet pill select. */
 function ProjectPick({ m, value, onChange }: { m: TasksModel; value: string; onChange: (id: string) => void }) {
   return (
     <Select
@@ -801,34 +671,12 @@ function ProjectPick({ m, value, onChange }: { m: TasksModel; value: string; onC
   );
 }
 
-/** Tag filter for the list (the old page's «#тег» filter) — the same quiet pill select. */
-function TagPick({ m, value, onChange }: { m: TasksModel; value: string; onChange: (tag: string) => void }) {
-  const open = m.tasks.filter((t) => !t.done);
-  return (
-    <Select
-      ariaLabel="Тег"
-      round
-      surface="card"
-      height={36}
-      maxWidth={220}
-      active={!!value}
-      value={value}
-      onChange={onChange}
-      options={[{ value: "", label: "Все теги" }, ...m.allTags.map((t) => ({ value: t, label: `#${t}`, hint: open.filter((x) => x.tags.includes(t)).length }))]}
-    />
-  );
-}
-
 // ── Screen ────────────────────────────────────────────────────────────────────────────────────
 
 export default function TasksByTime() {
   const m = useTasksModel();
-  const [view, setViewState] = useState<View>(loadView);
-  const [list, setList] = useState<SmartList>("all");
   const [query, setQuery] = useState("");
   const [project, setProject] = useState("");
-  const [sort, setSort] = useState<Sort>("due");
-  const [tag, setTag] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [meetingOpen, setMeetingOpen] = useState(false);
@@ -838,29 +686,13 @@ export default function TasksByTime() {
     setDraft(null);
   }, []);
 
-  const setView = (v: View) => {
-    setViewState(v);
-    saveView(v);
-  };
   const pid = project === "" ? undefined : project === "none" ? null : project;
   const projectId = project && project !== "none" ? project : undefined;
   const open = (t: Task) => setEditId(t.id);
 
-  const items = m.filter({ list, query, projectId: pid, tag: tag || null });
-  const groups: Group[] =
-    list === "done"
-      ? doneGroups(items.slice(0, 120))
-      : list === "snoozed"
-        ? items.length
-          ? [{ key: "snoozed", label: "Отложенные", items }]
-          : []
-        : sortGroups(items, sort, m);
-  const flat = list !== "done" && list !== "snoozed" && sort === "title";
-
   const openCount = m.counts.all;
   const overdue = m.counts.overdue;
-  const add = (v: string) => m.actions.add(v, { dueDate: list === "today" ? todayStr() : undefined, projectId });
-  const newTask = () => setDraft({ projectId, dueDate: view === "list" && list === "today" ? todayStr() : undefined });
+  const newTask = () => setDraft({ projectId });
 
   return (
     <CraftShell
@@ -869,6 +701,7 @@ export default function TasksByTime() {
       icon={CircleCheckBig}
       subtitle={`${openCount} ${plural(openCount, "открытая", "открытые", "открытых")}${overdue ? ` · ${overdue} просрочено` : ""}`}
       search={{ value: query, onChange: setQuery, placeholder: "Поиск задач" }}
+      titleRight={<ProjectPick m={m} value={project} onChange={setProject} />}
       actions={
         <>
           <NewMeetingBtn onClick={() => setMeetingOpen(true)} />
@@ -876,59 +709,7 @@ export default function TasksByTime() {
         </>
       }
     >
-      <div data-lab-block="views" className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <ListTabs items={VIEWS} value={view} onChange={setView} />
-        {view !== "list" && <ProjectPick m={m} value={project} onChange={setProject} />}
-      </div>
-
-      {view === "week" && <WeekBoard m={m} query={query} pid={pid} onOpen={open} />}
-
-      {view === "kanban" && <Kanban m={m} query={query} pid={pid} onOpen={open} />}
-
-      {view === "list" && (
-        <div className="mt-4 grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(240px,300px)]">
-          <section data-lab-block="list" className="flex min-w-0 flex-col overflow-hidden" style={{ background: C.card, borderRadius: R.card }}>
-            <div data-lab-block="tabs" className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-              <ListTabs
-                size={36}
-                items={LISTS.map((l) => ({ key: l.key, label: l.label, count: l.key === "done" ? undefined : m.counts[l.key], warn: l.key === "overdue" }))}
-                value={list}
-                onChange={setList}
-              />
-              <TagPick m={m} value={tag} onChange={setTag} />
-            </div>
-            {list !== "done" && (
-              <div data-lab-block="add" className="px-5 pb-5 pt-4" style={dashed}>
-                <QuickAdd onAdd={add} placeholder={list === "today" ? "Новая задача на сегодня — «15:00 #работа»" : "Новая задача — «завтра 15:00 #работа»"} />
-              </div>
-            )}
-            {groups.length === 0 ? (
-              <div className="p-5">
-                <Empty>
-                  {query
-                    ? `Ничего не найдено по «${query}»`
-                    : tag
-                      ? `Нет задач с тегом #${tag}`
-                      : list === "today"
-                      ? "На сегодня задач нет"
-                      : list === "overdue"
-                        ? "Просроченных задач нет"
-                        : list === "done"
-                          ? "Завершённых задач пока нет"
-                          : "В этом списке пусто"}
-                </Empty>
-              </div>
-            ) : (
-              <div className="pb-2">
-                {groups.map((g, gi) => (
-                  <GroupBlock key={`${list}-${sort}-${g.key}`} g={g} m={m} onOpen={open} markRow={gi === 0} flat={flat} />
-                ))}
-              </div>
-            )}
-          </section>
-          <Rail m={m} project={project} onProject={setProject} sort={sort} onSort={setSort} />
-        </div>
-      )}
+      <WeekBoard m={m} query={query} pid={pid} onOpen={open} />
 
       {(editId || draft) && <TaskEditor taskId={editId} draft={draft ?? undefined} m={m} onClose={closeEditor} />}
       {meetingOpen && <MeetingEditor onClose={closeMeeting} />}
