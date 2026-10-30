@@ -12,12 +12,15 @@
  *   │  12 задач · 3 просроч.  ● Высокий                                       │
  *   └────────────────────────────────────────────────────────────────────────┘
  *
+ * A project with status «Завершён» carries a big green «Завершено» on its tile and a quieter folder
+ * (full again on hover) — it still opens like any other.
+ *
  * Click opens the project page (/projects/:id). Archive (with «Вернуть») sits on the tile on hover;
  * «Новый проект» opens the create dialog (name, status, priority, client, template).
  */
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Archive, Plus } from "lucide-react";
+import { Archive, Check, Plus } from "lucide-react";
 
 import { Btn, C, R, T, TONE, plural } from "@/design-lab/screens/_kit/craft";
 import { PRIORITY_META } from "@/types";
@@ -70,6 +73,7 @@ function FolderCard({ r, s, first }: { r: ProjectRow; s: ProjectsScreen; first: 
   const navigate = useNavigate();
   const [hover, setHover] = useState(false);
   const open = () => navigate(`/projects/${r.project.id}`);
+  const finished = r.project.status === "done";
   return (
     <article
       data-lab-block={first ? "card" : undefined}
@@ -106,7 +110,16 @@ function FolderCard({ r, s, first }: { r: ProjectRow; s: ProjectsScreen; first: 
           background: C.card,
         }}
       >
-        <Folder width="40%" open={hover} style={{ maxWidth: 156, minWidth: 64 }} />
+        <Folder width="40%" open={hover} style={{ maxWidth: 156, minWidth: 64, opacity: finished && !hover ? 0.5 : 1, transition: "opacity 200ms ease" }} />
+        {finished && (
+          <span
+            className="absolute left-3 top-3 inline-flex items-center gap-1.5 pl-2.5 pr-3.5"
+            style={{ height: 34, borderRadius: 999, fontSize: 14, fontWeight: 500, background: TONE.green.bg, color: TONE.green.fg }}
+          >
+            <Check size={16} strokeWidth={2.25} />
+            Завершено
+          </span>
+        )}
         <button
           type="button"
           title={`В архив: ${r.project.name}`}

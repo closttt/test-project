@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectType, matchesLibraryQuery, sortLibrary, libraryTagCounts, newDraft, linkDrafts, unfurlPatch, type LibraryItem } from "@/lib/library";
+import { detectType, matchesLibraryQuery, sortLibrary, libraryTagCounts, newDraft, linkDrafts, unfurlPatch, topicOf, withTopic, type LibraryItem } from "@/lib/library";
 
 function item(over: Partial<LibraryItem>): LibraryItem {
   return {
@@ -17,6 +17,12 @@ describe("detectType", () => {
     expect(detectType("https://www.coursera.org/learn/ml")).toBe("course");
     expect(detectType("https://github.com/foo/bar")).toBe("tool");
     expect(detectType("https://habr.com/ru/articles/1/")).toBe("article");
+  });
+  it("social posts are posts, look-alike hosts are not", () => {
+    expect(detectType("https://t.me/channel/123")).toBe("post");
+    expect(detectType("https://x.com/user/status/1")).toBe("post");
+    expect(detectType("https://vk.com/wall-1_2")).toBe("post");
+    expect(detectType("https://netflix.com/title/1")).toBe("article");
   });
   it("defaults to book without a link (a book is the common thing with no URL)", () => {
     expect(detectType(undefined)).toBe("book");
@@ -79,5 +85,19 @@ describe("one-field add", () => {
   });
   it("never overwrites a title the user typed meanwhile", () => {
     expect(unfurlPatch({ title: "Статья" }, { title: "Моё название", domain: "habr.com" })).toEqual({});
+  });
+});
+
+describe("topicOf / withTopic", () => {
+  it("reads the primary tag first, then the related ones", () => {
+    expect(topicOf(item({ tags: ["дизайн"] }))).toBe("design");
+    expect(topicOf(item({ tags: ["вайб-кодинг"] }))).toBe("dev");
+    expect(topicOf(item({ tags: ["дизайн-система", "разработка"] }))).toBe("dev");
+    expect(topicOf(item({ tags: ["остальное"] }))).toBe("other");
+    expect(topicOf(item({ tags: ["что-то"] }))).toBeNull();
+  });
+  it("switches the topic, keeping the other tags", () => {
+    expect(withTopic(["дизайн", "дизайн-система"], "dev")).toEqual(["разработка", "дизайн-система"]);
+    expect(withTopic(["разработка", "x"], null)).toEqual(["x"]);
   });
 });

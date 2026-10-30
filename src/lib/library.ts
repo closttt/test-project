@@ -13,7 +13,7 @@ import { uid } from "@/lib/id";
  * replaces its state.
  */
 
-export type LibraryType = "book" | "article" | "video" | "podcast" | "course" | "tool" | "other";
+export type LibraryType = "book" | "article" | "post" | "video" | "podcast" | "course" | "tool" | "other";
 export type LibraryStatus = "want" | "doing" | "done";
 
 export interface LibraryItem {
@@ -45,6 +45,7 @@ export type LibraryDraft = Omit<LibraryItem, "id" | "createdAt" | "updatedAt">;
 export const LIBRARY_TYPES: Record<LibraryType, { label: string; plural: string; done: string }> = {
   book: { label: "Книга", plural: "Книги", done: "Прочитано" },
   article: { label: "Статья", plural: "Статьи", done: "Прочитано" },
+  post: { label: "Пост", plural: "Посты", done: "Прочитано" },
   video: { label: "Видео", plural: "Видео", done: "Просмотрено" },
   podcast: { label: "Подкаст", plural: "Подкасты", done: "Прослушано" },
   course: { label: "Курс", plural: "Курсы", done: "Пройдено" },
@@ -52,7 +53,7 @@ export const LIBRARY_TYPES: Record<LibraryType, { label: string; plural: string;
   other: { label: "Другое", plural: "Другое", done: "Готово" },
 };
 
-export const LIBRARY_TYPE_ORDER: LibraryType[] = ["book", "article", "video", "podcast", "course", "tool", "other"];
+export const LIBRARY_TYPE_ORDER: LibraryType[] = ["book", "article", "post", "video", "podcast", "course", "tool", "other"];
 
 export const LIBRARY_STATUSES: Record<LibraryStatus, { label: string }> = {
   want: { label: "Хочу" },
@@ -82,6 +83,10 @@ export const LIBRARY_NOTE_TEMPLATES: Record<LibraryType, string> = {
 -
 
 ## Куда применить
+-`,
+  post: `## О чём
+
+## Что забрать
 -`,
   video: `## О чём
 
@@ -128,12 +133,44 @@ export function detectType(url: string | undefined): LibraryType {
   const path = (() => { try { return new URL(url).pathname.toLowerCase(); } catch { return ""; } })();
   const has = (...parts: string[]) => parts.some((p) => host.includes(p));
   if (has("youtube.com", "youtu.be", "vimeo.com", "rutube.ru", "vk.com/video", "kinescope", "loom.com")) return "video";
+  if (["t.me", "x.com", "twitter.com", "threads.net", "instagram.com"].includes(host) || (host === "vk.com" && path.startsWith("/wall")) || (host.endsWith("linkedin.com") && path.startsWith("/posts"))) return "post";
   if (has("spotify.com", "podcasts.apple.com", "castbox", "music.yandex", "podster", "overcast.fm", "pocketcasts", "podcast")) return "podcast";
   if (has("litres", "goodreads", "labirint", "chitai-gorod", "books.google", "audible", "storytel", "bookmate", "mif.to", "alpinabook", "piter.com", "readly") || /\/book/.test(path)) return "book";
   if (has("amazon.") && /\/dp\/|\/gp\/product/.test(path)) return "book";
   if (has("udemy", "coursera", "stepik", "skillbox", "netology", "yandex.ru/practicum", "practicum.yandex", "edx.org", "skillshare", "geekbrains", "hexlet", "khanacademy", "masterclass")) return "course";
   if (has("github.com", "npmjs.com", "producthunt", "pypi.org", "chrome.google.com/webstore", "apps.apple.com", "play.google.com", "figma.com/community")) return "tool";
   return "article";
+}
+
+/**
+ * Topic of an item — «дизайн / разработка / остальное», for sorting what's been read. Not a column:
+ * it rides on the tags the owner already uses, so the chip and the tag stay one thing. The primary
+ * tag wins; the older related tags («дизайн-система», «вайб-кодинг») count as the same topic.
+ */
+export type LibraryTopic = "design" | "dev" | "other";
+
+export const LIBRARY_TOPICS: Record<LibraryTopic, { label: string; tag: string; aliases: string[] }> = {
+  design: { label: "Дизайн", tag: "дизайн", aliases: ["дизайн-система", "ux", "ui"] },
+  dev: { label: "Разработка", tag: "разработка", aliases: ["вайб-кодинг", "код", "frontend"] },
+  other: { label: "Остальное", tag: "остальное", aliases: ["не по работе"] },
+};
+
+export const LIBRARY_TOPIC_ORDER: LibraryTopic[] = ["design", "dev", "other"];
+
+export function topicOf(item: Pick<LibraryItem, "tags">): LibraryTopic | null {
+  const tags = item.tags.map((t) => t.toLowerCase());
+  return (
+    LIBRARY_TOPIC_ORDER.find((t) => tags.includes(LIBRARY_TOPICS[t].tag)) ??
+    LIBRARY_TOPIC_ORDER.find((t) => LIBRARY_TOPICS[t].aliases.some((a) => tags.includes(a))) ??
+    null
+  );
+}
+
+/** Tags with the topic switched: the other topics' primary tags go, related tags stay. null clears it. */
+export function withTopic(tags: string[], topic: LibraryTopic | null): string[] {
+  const primary = new Set(LIBRARY_TOPIC_ORDER.map((t) => LIBRARY_TOPICS[t].tag));
+  const rest = tags.filter((t) => !primary.has(t.toLowerCase()));
+  return topic ? [LIBRARY_TOPICS[topic].tag, ...rest] : rest;
 }
 
 /** Shared search: title, author, description, notes, tags, domain. */

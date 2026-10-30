@@ -998,6 +998,7 @@ const HAS_LINK = /https?:\/\//i;
 const FIELD_BY_TYPE: Record<LibraryType, "orb" | "stripes" | "wave" | "ridge" | "blob"> = {
   book: "ridge",
   article: "stripes",
+  post: "stripes",
   video: "wave",
   podcast: "orb",
   course: "blob",

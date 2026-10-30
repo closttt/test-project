@@ -43,7 +43,7 @@ function cardDraft(c: KnowledgeCard): LibraryDraft {
     d.url = c.sourceUrl;
     d.domain = prettyDomain(c.sourceUrl);
   }
-  d.type = d.url ? detectType(d.url) : "article";
+  d.type = d.url ? detectType(d.url) : "post";
   return d;
 }
 

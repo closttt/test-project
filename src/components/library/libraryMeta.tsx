@@ -1,4 +1,4 @@
-import { Book, Newspaper, Video, Mic, GraduationCap, Wrench, Sparkles, type LucideIcon } from "lucide-react";
+import { Book, Newspaper, MessageSquareText, Video, Mic, GraduationCap, Wrench, Sparkles, type LucideIcon } from "lucide-react";
 
 import type { LibraryType } from "@/lib/library";
 
@@ -6,6 +6,7 @@ import type { LibraryType } from "@/lib/library";
 export const TYPE_ICON: Record<LibraryType, LucideIcon> = {
   book: Book,
   article: Newspaper,
+  post: MessageSquareText,
   video: Video,
   podcast: Mic,
   course: GraduationCap,
@@ -16,6 +17,7 @@ export const TYPE_ICON: Record<LibraryType, LucideIcon> = {
 export const TYPE_STYLE: Record<LibraryType, { chip: string; plate: string }> = {
   book: { chip: "bg-amber-500/15 text-amber-400", plate: "from-amber-500/30 to-amber-500/5 text-amber-400" },
   article: { chip: "bg-brand/15 text-brand", plate: "from-brand/30 to-brand/5 text-brand" },
+  post: { chip: "bg-sky-500/15 text-sky-400", plate: "from-sky-500/30 to-sky-500/5 text-sky-400" },
   video: { chip: "bg-rose-500/15 text-rose-400", plate: "from-rose-500/30 to-rose-500/5 text-rose-400" },
   podcast: { chip: "bg-violet-500/15 text-violet-400", plate: "from-violet-500/30 to-violet-500/5 text-violet-400" },
   course: { chip: "bg-success/15 text-success", plate: "from-success/30 to-success/5 text-success" },

@@ -49,6 +49,8 @@ import { faviconUrl, linkMonogram } from "@/lib/links";
 import {
   LIBRARY_STATUSES,
   LIBRARY_STATUS_ORDER,
+  LIBRARY_TOPICS,
+  LIBRARY_TOPIC_ORDER,
   LIBRARY_TYPES,
   LIBRARY_TYPE_ORDER,
   detectType,
@@ -58,7 +60,9 @@ import {
   restoreLibraryItem,
   unfurl,
   unfurlPatch,
+  topicOf,
   updateLibraryItem,
+  withTopic,
   type LibraryDraft,
   type LibraryItem,
   type LibraryStatus,
@@ -1409,6 +1413,16 @@ export function LibraryView({ k, item, onClose, nav }: { k: Knowledge; item: Lib
               )}
             </div>
           )}
+          <div className="mt-5 flex flex-wrap items-center gap-1.5">
+            {LIBRARY_TOPIC_ORDER.map((t) => {
+              const on = topicOf(f) === t;
+              return (
+                <Pill key={t} size={32} on={on} onClick={() => set({ tags: withTopic(f.tags, on ? null : t) }, true)}>
+                  {LIBRARY_TOPICS[t].label}
+                </Pill>
+              );
+            })}
+          </div>
           {item.description && !more && (
             <p className="mt-6" style={{ fontSize: 15, lineHeight: 1.6, color: C.text2 }}>
               {item.description}

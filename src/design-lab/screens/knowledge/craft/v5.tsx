@@ -4,6 +4,7 @@
  *
  *   ┌ ring n/всего изучено │ split Хочу · В процессе · Готово │ paste link [Добавить] ┐
  *   ┌ Очередь чтения (cover strip, round «закрыть» checkbox) ┐ ┌ Пополнение · 8 недель ┐
+ *     Хочу · В процессе · Просмотренные — the last one filters by type (пост, статья, видео…) and topic.
  *   ┌ Конспекты: folder tree + search │ folder contents ┐ ┌ Закрытые ┐ ┌ Полка ссылок ┐
  * Materials and notes open on a minimal sheet; links open in a new tab.
  *
@@ -14,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { BookOpen, ChevronDown, Library, Link2, Pencil, Plus, Search, Send, Trash2, X } from "lucide-react";
 
-import { Btn, C, CapsuleBars, R, Ring, SplitBar, T, dashed } from "@/design-lab/screens/_kit/craft";
+import { Btn, C, CapsuleBars, R, Ring, SplitBar, T, TONE, dashed } from "@/design-lab/screens/_kit/craft";
 import { CraftShell } from "@/design-lab/screens/_kit/craftShell";
 import {
   AddBar,
@@ -52,7 +53,7 @@ import {
 import { VaultPanel } from "./_vault";
 import { useTelegramInbox } from "./_telegram";
 import { linksOfSection } from "@/lib/knowledgeLinks";
-import { newDraft, type LibraryDraft } from "@/lib/library";
+import { LIBRARY_TOPICS, LIBRARY_TOPIC_ORDER, LIBRARY_TYPE_ORDER, newDraft, topicOf, type LibraryDraft, type LibraryTopic, type LibraryType } from "@/lib/library";
 
 function Tile({ area, children, className = "" }: { area: string; children: React.ReactNode; className?: string }) {
   return (
@@ -77,7 +78,23 @@ function Head({ title, sub, right, icon }: { title: string; sub?: React.ReactNod
   );
 }
 
+/** Small topic tag on a card: violet — дизайн, blue — разработка, grey — остальное. */
+const TOPIC_TAG: Record<LibraryTopic, { fg: string; bg: string }> = {
+  design: { fg: TONE.violet.fg, bg: TONE.violet.bg },
+  dev: { fg: TONE.blue.fg, bg: TONE.blue.bg },
+  other: { fg: C.text2, bg: C.raise },
+};
+
+function TopicTag({ topic }: { topic: LibraryTopic }) {
+  return (
+    <span className="shrink-0 px-2" style={{ height: 20, lineHeight: "20px", borderRadius: 999, fontSize: 11, fontWeight: 500, color: TOPIC_TAG[topic].fg, background: TOPIC_TAG[topic].bg }}>
+      {LIBRARY_TOPICS[topic].label}
+    </span>
+  );
+}
+
 function QueueCard({ k, i, onOpen }: { k: Knowledge; i: LibraryItem; onOpen: () => void }) {
+  const topic = topicOf(i);
   return (
     <article role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen()} className="group flex w-full min-w-0 cursor-pointer flex-col gap-3 outline-none">
       <div className="relative">
@@ -95,12 +112,58 @@ function QueueCard({ k, i, onOpen }: { k: Knowledge; i: LibraryItem; onOpen: () 
         <div className="kn-clamp2 transition-colors group-hover:text-[#FFFFFF]" style={{ ...T.body, lineHeight: 1.35, fontWeight: 500, color: C.text }}>
           {clean(i.title) || i.domain}
         </div>
-        <div className="mt-1.5 flex items-center gap-1.5 truncate" style={{ ...T.foot, color: C.text3 }}>
+        <div className="mt-1.5 flex min-w-0 items-center gap-1.5" style={{ ...T.foot, color: C.text3 }}>
           {i.domain && <Favicon domain={i.domain} size={14} radius={3} />}
-          <span className="truncate">{i.author ?? i.domain ?? LIBRARY_TYPES[i.type].label}</span>
+          <span className="min-w-0 flex-1 truncate">{i.author ?? i.domain ?? LIBRARY_TYPES[i.type].label}</span>
+          {topic && <TopicTag topic={topic} />}
         </div>
       </div>
     </article>
+  );
+}
+
+type QueueTab = "want" | "doing" | "done";
+/** «Просмотренные» filters: type and topic; null = all, "none" = topic not set yet. */
+type SeenFilter = { type: LibraryType | null; topic: LibraryTopic | "none" | null };
+
+const QUEUE_TABS = (counts: { want: number; doing: number; done: number }) => [
+  { id: "want" as const, label: "Хочу", count: counts.want },
+  { id: "doing" as const, label: "В процессе", count: counts.doing },
+  { id: "done" as const, label: "Просмотренные", count: counts.done },
+];
+
+const byType = (f: SeenFilter) => (i: LibraryItem) => !f.type || i.type === f.type;
+const byTopic = (f: SeenFilter) => (i: LibraryItem) => !f.topic || (topicOf(i) ?? "none") === f.topic;
+
+/** One tab of the queue; «Просмотренные» are filtered and go freshest-closed first. */
+function queueOf(items: LibraryItem[], tab: QueueTab, f: SeenFilter) {
+  const list = items.filter((i) => i.status === tab);
+  if (tab !== "done") return list;
+  return list.filter(byType(f)).filter(byTopic(f)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Type pills, then topic pills — each counted within the other's choice; a second click clears. */
+function SeenFilters({ seen, f, setF }: { seen: LibraryItem[]; f: SeenFilter; setF: (f: SeenFilter) => void }) {
+  const ofTopic = seen.filter(byTopic(f));
+  const ofType = seen.filter(byType(f));
+  const types = LIBRARY_TYPE_ORDER.map((t) => ({ t, n: ofTopic.filter((i) => i.type === t).length })).filter((x) => x.n > 0 || f.type === x.t);
+  const topics = [...LIBRARY_TOPIC_ORDER, "none" as const]
+    .map((t) => ({ t, n: ofType.filter((i) => (topicOf(i) ?? "none") === t).length }))
+    .filter((x) => x.n > 0 || f.topic === x.t);
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-1.5">
+      {types.map(({ t, n }) => (
+        <Pill key={t} size={32} on={f.type === t} count={n} onClick={() => setF({ ...f, type: f.type === t ? null : t })}>
+          {LIBRARY_TYPES[t].plural}
+        </Pill>
+      ))}
+      <span className="mx-1.5 hidden sm:block" style={{ width: 1, height: 18, background: C.line }} />
+      {topics.map(({ t, n }) => (
+        <Pill key={t} size={32} on={f.topic === t} count={n} onClick={() => setF({ ...f, topic: f.topic === t ? null : t })}>
+          {t === "none" ? "Без темы" : LIBRARY_TOPICS[t].label}
+        </Pill>
+      ))}
+    </div>
   );
 }
 
@@ -137,21 +200,26 @@ function QueueAll({
   tab,
   setTab,
   counts,
+  filter,
+  setFilter,
   initialQuery,
   onOpen,
   onClose,
 }: {
   k: Knowledge;
-  tab: "want" | "doing";
-  setTab: (t: "want" | "doing") => void;
-  counts: { want: number; doing: number };
+  tab: QueueTab;
+  setTab: (t: QueueTab) => void;
+  counts: { want: number; doing: number; done: number };
+  filter: SeenFilter;
+  setFilter: (f: SeenFilter) => void;
   initialQuery: string;
   onOpen: (i: LibraryItem, list: LibraryItem[]) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState(initialQuery);
   const q = query.trim().toLowerCase();
-  const list = k.lib.items.filter((i) => i.status === tab && matchLib(i, q));
+  const found = k.lib.items.filter((i) => matchLib(i, q));
+  const list = queueOf(found, tab, filter);
   return (
     <Sheet label="Очередь чтения" onClose={onClose} width={1240}>
       <div className="flex flex-wrap items-center gap-3 pl-5 pr-3 pt-4 sm:pl-8 sm:pr-4" style={{ minHeight: 56 }}>
@@ -168,22 +236,20 @@ function QueueAll({
             style={{ fontSize: 14, color: C.text }}
           />
         </label>
-        <Seg
-          value={tab}
-          onChange={setTab}
-          items={[
-            { id: "want", label: "Хочу", count: counts.want },
-            { id: "doing", label: "В процессе", count: counts.doing },
-          ]}
-        />
+        <Seg value={tab} onChange={setTab} items={QUEUE_TABS(counts)} />
         <RowAct title="Закрыть" onClick={onClose}>
           <X size={18} strokeWidth={1.75} />
         </RowAct>
       </div>
+      {tab === "done" && (
+        <div className="-mt-1 px-5 sm:px-8">
+          <SeenFilters seen={found.filter((i) => i.status === "done")} f={filter} setF={setFilter} />
+        </div>
+      )}
       <div className="kn-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-5 sm:px-8">
         {list.length === 0 ? (
           <div className="grid h-full place-items-center" style={{ ...T.body, color: C.text3 }}>
-            {q ? "Ничего не нашлось" : "Пусто"}
+            {q || (tab === "done" && (filter.type || filter.topic)) ? "Ничего не нашлось" : "Пусто"}
           </div>
         ) : (
           <div className="grid gap-x-4 gap-y-7" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${CARD_MIN}px, 1fr))` }}>
@@ -224,7 +290,8 @@ export default function KnowledgeOverview() {
   const location = useLocation();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const [queueTab, setQueueTab] = useState<"want" | "doing">("want");
+  const [queueTab, setQueueTab] = useState<QueueTab>("want");
+  const [seenFilter, setSeenFilter] = useState<SeenFilter>({ type: null, topic: null });
   const [folder, setFolder] = useState<string | null>(null);
   /** The open material and the list it was opened from (← → flip through that list). */
   const [openCtx, setOpenCtx] = useState<{ id: string; ids: string[] } | null>(null);
@@ -266,7 +333,7 @@ export default function KnowledgeOverview() {
   const stats = libStats(items);
   const pct = items.length ? (stats.done / items.length) * 100 : 0;
   const lib = items.filter((i) => matchLib(i, q));
-  const queue = lib.filter((i) => i.status === queueTab);
+  const queue = queueOf(lib, queueTab, seenFilter);
   const closed = lib.filter((i) => i.status === "done").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   const pace = useMemo(() => weekly([...items.map((i) => i.createdAt), ...k.vault.notes.map((n) => n.createdAt), ...k.links.shelf.links.map((l) => l.createdAt)]), [items, k.vault.notes, k.links.shelf.links]);
@@ -353,14 +420,7 @@ export default function KnowledgeOverview() {
                     Из Telegram
                   </Pill>
                 )}
-                <Seg
-                  value={queueTab}
-                  onChange={setQueueTab}
-                  items={[
-                    { id: "want", label: "Хочу", count: stats.want },
-                    { id: "doing", label: "В процессе", count: stats.doing },
-                  ]}
-                />
+                <Seg value={queueTab} onChange={setQueueTab} items={QUEUE_TABS(stats)} />
                 {queue.length > 0 && (
                   <Pill size={36} onClick={() => setShowAll(true)} count={queue.length}>
                     Показать все
@@ -369,6 +429,7 @@ export default function KnowledgeOverview() {
               </div>
             }
           />
+          {queueTab === "done" && !k.lib.loading && <SeenFilters seen={lib.filter((i) => i.status === "done")} f={seenFilter} setF={setSeenFilter} />}
           {k.lib.loading ? (
             <div className="mt-5 flex gap-4 overflow-hidden">
               {[0, 1, 2, 3].map((n) => (
@@ -377,7 +438,7 @@ export default function KnowledgeOverview() {
             </div>
           ) : queue.length === 0 ? (
             <div className="mt-5 grid flex-1 place-items-center py-10" style={{ borderRadius: R.inner, border: `1px dashed ${C.line2}`, ...T.body, color: C.text3 }}>
-              {q ? "Ничего не нашлось" : "Пусто"}
+              {q || (queueTab === "done" && (seenFilter.type || seenFilter.topic)) ? "Ничего не нашлось" : "Пусто"}
             </div>
           ) : (
             <QueueRow k={k} list={queue} onOpen={(i) => openItem(i, queue)} />
@@ -560,7 +621,7 @@ export default function KnowledgeOverview() {
           onClose={() => setSectionDel(null)}
         />
       )}
-      {showAll && <QueueAll k={k} tab={queueTab} setTab={setQueueTab} counts={stats} initialQuery={query} onOpen={openItem} onClose={() => setShowAll(false)} />}
+      {showAll && <QueueAll k={k} tab={queueTab} setTab={setQueueTab} counts={stats} filter={seenFilter} setFilter={setSeenFilter} initialQuery={query} onOpen={openItem} onClose={() => setShowAll(false)} />}
       {opened && <LibraryView key={opened.id} k={k} item={opened} nav={nav} onClose={() => setOpenCtx(null)} />}
       {draft && <LibraryEditor k={k} draft={draft} onClose={() => setDraft(null)} />}
       {openNote && (
