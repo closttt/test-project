@@ -359,9 +359,18 @@ export function CalendarPanel({
 }) {
   const today = localDayStr();
   const [cursor, setCursor] = useState(value || today);
-  const c = fromDay(cursor);
-  const y = c.getFullYear();
-  const mo = c.getMonth();
+  // The shown month is its own state: hovering a grey day of the next/previous month only
+  // highlights it — deriving the month from the cursor flipped the grid under the mouse.
+  const [view, setView] = useState(() => {
+    const d = fromDay(value || today);
+    return { y: d.getFullYear(), mo: d.getMonth() };
+  });
+  const { y, mo } = view;
+  const moveCursor = (s: string) => {
+    const d = fromDay(s);
+    setCursor(s);
+    setView({ y: d.getFullYear(), mo: d.getMonth() });
+  };
   const cells = useMemo(() => {
     const first = new Date(y, mo, 1);
     const lead = weekStartsMonday ? (first.getDay() + 6) % 7 : first.getDay();
@@ -377,13 +386,13 @@ export function CalendarPanel({
   const shiftMonth = (n: number) => {
     const d = new Date(y, mo + n, 1);
     const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    d.setDate(Math.min(c.getDate(), last));
-    setCursor(localDayStr(d));
+    d.setDate(Math.min(fromDay(cursor).getDate(), last));
+    moveCursor(localDayStr(d));
   };
   if (keyRef)
     keyRef.current = (e) => {
       const move = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
-      if (move) return setCursor((s) => addDays(fromDay(s), move)), true;
+      if (move) return moveCursor(addDays(fromDay(cursor), move)), true;
       if (e.key === "PageUp") return shiftMonth(-1), true;
       if (e.key === "PageDown") return shiftMonth(1), true;
       if (e.key === "Enter") return onPick(cursor), true;
