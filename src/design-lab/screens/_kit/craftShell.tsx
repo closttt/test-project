@@ -241,7 +241,7 @@ export function MobileNav({ active }: { active: NavId }) {
 }
 
 /** Opens the AI assistant drawer (components/AiAssistant, mounted in GlobalLayout); also «a». */
-function AssistantBtn() {
+export function AssistantBtn() {
   const { setAssistantOpen } = useUI();
   return (
     <IconBtn title="ИИ-ассистент (a)" onClick={() => setAssistantOpen(true)}>

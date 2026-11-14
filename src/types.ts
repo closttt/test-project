@@ -164,6 +164,21 @@ export interface PomodoroSession {
   date: string; // YYYY-MM-DD (local day the interval finished)
 }
 
+/**
+ * A repeating task — «Тренировка: Вт, Чт, Сб, высокий». Not a task itself: lib/routines.ts puts a
+ * real Task on each chosen weekday (today through the end of next week), every week, until the
+ * routine is deleted.
+ */
+export interface Routine {
+  id: string;
+  title: string;
+  /** ISO weekdays: 1 = Monday … 7 = Sunday. */
+  days: number[];
+  priority: Priority;
+  projectId?: string;
+  createdAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -200,6 +215,8 @@ export interface Task {
   kanbanColumnId?: string;
   /** IDs of other tasks that must be completed first (this task "waits for" them). */
   blockedBy?: string[];
+  /** The repeating task (Routine) this task was spawned from — lib/routines.ts. */
+  routineId?: string;
   order: number;
   createdAt: string;
 }
@@ -404,6 +421,12 @@ export interface AppData {
   /** Kanban tasks taken off the planner by hand, as `${taskId}@${date}` — move the task to another
    * day on the kanban and it shows up there again. */
   planDismissed?: string[];
+  /** Repeating tasks («Повторяющиеся задачи»): each puts a task on its weekdays, week after week,
+   * until deleted. Undefined = never set up → migrate() seeds the owner's starter set. */
+  routines?: Routine[];
+  /** `${routineId}@${YYYY-MM-DD}` for every day a routine already put its task on — so a task the
+   * owner deleted by hand doesn't come back. Pruned to the last few weeks. */
+  routineSpawned?: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {

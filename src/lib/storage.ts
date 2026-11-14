@@ -1,6 +1,7 @@
 import type { AppData } from "@/types";
 import { DEFAULT_SETTINGS, DEFAULT_GAMIFICATION, DEFAULT_POMODORO } from "@/types";
 import { defaultTemplates } from "@/lib/planner";
+import { starterRoutines } from "@/lib/routines";
 
 const STORAGE_KEY = "crm-taskmanager-data-v1";
 
@@ -75,6 +76,8 @@ export function migrate(data: AppData): AppData {
   } else {
     data.gamification = { ...DEFAULT_GAMIFICATION, ...data.gamification };
   }
+  // v5.7: repeating tasks. Never set up → the owner's starter set, once; an emptied list stays empty.
+  if (!Array.isArray(data.routines)) data.routines = starterRoutines(new Date().toISOString());
   return data;
 }
 

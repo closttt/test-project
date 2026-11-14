@@ -15,7 +15,7 @@
  *   └──────────────────────────────────────────────────────────────────────────┘
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleCheckBig, FolderKanban, Plus, Trash2, Video } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleCheckBig, FolderKanban, Plus, Repeat, Trash2, Video } from "lucide-react";
 
 import { Btn, C, Empty, IconBtn, R, Ring, T, TONE, dashed, plural } from "@/design-lab/screens/_kit/craft";
 import { Select, TagChips, metaChip } from "@/design-lab/screens/_kit/controls";
@@ -51,6 +51,7 @@ import {
   type TaskDraft,
   type TasksModel,
 } from "./_parts";
+import { RoutinesBtn, RoutinesDialog } from "./routines";
 
 const GROUP_CAP = 8;
 const BACKLOG_CAP = 8;
@@ -169,6 +170,7 @@ function TaskCard({ t, m, onOpen, mark, showDate, compact }: { t: Task; m: Tasks
       </button>
       {!compact && (
         <div className="flex min-w-0 flex-wrap items-center gap-1.5" style={{ paddingLeft: 28 }}>
+          {t.routineId && <Repeat size={13} strokeWidth={1.75} color={C.text3} className="shrink-0" aria-label="Повторяется" />}
           <PrioChip p={t.priority} />
           {pname && t.projectId && <ProjectChip id={t.projectId} name={pname} on="raise" />}
           <TagChips tags={t.tags} />
@@ -681,6 +683,8 @@ export default function TasksByTime() {
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [meetingOpen, setMeetingOpen] = useState(false);
   const closeMeeting = useCallback(() => setMeetingOpen(false), []);
+  const [routinesOpen, setRoutinesOpen] = useState(false);
+  const closeRoutines = useCallback(() => setRoutinesOpen(false), []);
   const closeEditor = useCallback(() => {
     setEditId(null);
     setDraft(null);
@@ -704,6 +708,7 @@ export default function TasksByTime() {
       titleRight={<ProjectPick m={m} value={project} onChange={setProject} />}
       actions={
         <>
+          <RoutinesBtn onClick={() => setRoutinesOpen(true)} />
           <NewMeetingBtn onClick={() => setMeetingOpen(true)} />
           <NewTaskBtn onClick={newTask} />
         </>
@@ -713,6 +718,7 @@ export default function TasksByTime() {
 
       {(editId || draft) && <TaskEditor taskId={editId} draft={draft ?? undefined} m={m} onClose={closeEditor} />}
       {meetingOpen && <MeetingEditor onClose={closeMeeting} />}
+      {routinesOpen && <RoutinesDialog onClose={closeRoutines} />}
     </CraftShell>
   );
 }

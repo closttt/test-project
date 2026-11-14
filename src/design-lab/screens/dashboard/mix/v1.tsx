@@ -59,7 +59,7 @@ import {
   rootStyle,
 } from "@/design-lab/screens/_kit/craft";
 import { useDashboardModel, type DashboardModel, type TodayRow } from "@/design-lab/screens/dashboardModel";
-import { MeetingBell, MobileNav, Sidebar } from "@/design-lab/screens/_kit/craftShell";
+import { AssistantBtn, MeetingBell, MobileNav, Sidebar } from "@/design-lab/screens/_kit/craftShell";
 import { TagChips } from "@/design-lab/screens/_kit/controls";
 import { MeetingEditor, PrioChip, ProjectChip, TaskEditor, useTasksModel, type TaskDraft } from "@/design-lab/screens/tasks/craft/_parts";
 import { useData } from "@/store/DataProvider";
@@ -964,6 +964,7 @@ export default function MixBentoKanban() {
             <span className="mr-2 hidden whitespace-nowrap md:inline" style={{ ...T.body, color: C.text3 }}>
               {m.dateLabel}
             </span>
+            <AssistantBtn />
             <MeetingBell dot={m.followUps.length > 0} />
             {/* Full-screen focus mode (/focus) — a labelled pill from tablet up, an icon on phones. */}
             <span className="hidden sm:inline-flex">

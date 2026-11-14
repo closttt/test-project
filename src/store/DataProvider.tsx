@@ -20,6 +20,8 @@ import type {
   ProjectTemplateTask,
   PlanBlock,
   PlanTemplate,
+  Priority,
+  Routine,
 } from "@/types";
 import { ACCENTS } from "@/types";
 import { loadData, createDebouncedSaver, migrate } from "@/lib/storage";
@@ -38,6 +40,7 @@ import {
 } from "@/lib/cloudSync";
 import { seedData } from "@/lib/seed";
 import { uid } from "@/lib/id";
+import { addRoutine, deleteRoutine, spawnRoutineTasks, updateRoutine } from "@/lib/routines";
 import { daysSince, todayStr, localDayStr } from "@/lib/format";
 import { xpForTaskCompletion } from "@/lib/gamification";
 import { playPop } from "@/lib/sound";
@@ -118,6 +121,10 @@ interface DataContextValue extends AppData {
   reorderTasks: (orderedIds: string[]) => void;
   deleteTask: (id: string) => void;
   restoreTask: (task: Task) => void;
+  /** Repeating tasks — see lib/routines.ts. */
+  addRoutine: (input: { title: string; days: number[]; priority: Priority; projectId?: string }) => void;
+  updateRoutine: (id: string, patch: Partial<Omit<Routine, "id" | "createdAt">>) => void;
+  deleteRoutine: (id: string) => void;
   archiveTask: (id: string) => void;
   unarchiveTask: (id: string) => void;
   archiveDoneTasks: () => number;
@@ -350,6 +357,22 @@ export function DataProvider({
     return () => { if (pushTimer.current) clearTimeout(pushTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  /**
+   * Repeating tasks (lib/routines.ts): fill the days ahead with each routine's task. Waits for the
+   * boot sync to settle, so a fresh device takes the cloud's routines first instead of spawning its
+   * own; re-runs when routines change and when the day turns. A no-op returns the same state.
+   */
+  const [day, setDay] = useState(() => todayStr());
+  useEffect(() => {
+    const id = setInterval(() => setDay(todayStr()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const syncSettled = sync.state !== "idle" && sync.state !== "syncing";
+  useEffect(() => {
+    if (sandbox || !syncSettled) return;
+    setData((d) => spawnRoutineTasks(d, day, uid));
+  }, [sandbox, syncSettled, day, data.routines]);
 
   /**
    * Coming back to a tab pulls in whatever the other device did while it sat idle. This is what
@@ -809,6 +832,9 @@ export function DataProvider({
             .map((t) => (t.blockedBy?.includes(id) ? { ...t, blockedBy: t.blockedBy.filter((b) => b !== id) } : t)),
         })),
       restoreTask: (task) => setData((d) => ({ ...d, tasks: [...d.tasks, task] })),
+      addRoutine: (input) => setData((d) => addRoutine(d, input, uid())),
+      updateRoutine: (id, patch) => setData((d) => updateRoutine(d, id, patch, todayStr())),
+      deleteRoutine: (id) => setData((d) => deleteRoutine(d, id, todayStr())),
       archiveTask: (id) =>
         setData((d) => ({
           ...d,
