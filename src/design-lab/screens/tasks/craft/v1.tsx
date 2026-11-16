@@ -569,8 +569,9 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
   const [offset, setOffset] = useState(0);
   const days = useMemo(() => weekDays(offset, m.weekStartsMonday), [offset, m.weekStartsMonday]);
   const pool = m.filter({ list: "all", query, projectId: pid });
-  const cols = days.map((d) => ({ d, items: m.freshFirst(pool.filter((t) => weekColumnOf(t, days) === d.date).sort(byPrio)) }));
-  const backlog = m.freshFirst(pool.filter((t) => weekColumnOf(t, days) === BACKLOG_KEY).sort(byPrio));
+  // Чисто по приоритету, без «свежих сверху» (16.11.2026).
+  const cols = days.map((d) => ({ d, items: pool.filter((t) => weekColumnOf(t, days) === d.date).sort(byPrio) }));
+  const backlog = pool.filter((t) => weekColumnOf(t, days) === BACKLOG_KEY).sort(byPrio);
   const inWeek = cols.reduce((s, c) => s + c.items.filter((t) => !t.done).length, 0);
   // Closed tasks per day: the day they were completed (else their due day); ones still showing
   // struck in the column (ticked this visit) are not repeated.

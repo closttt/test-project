@@ -181,7 +181,8 @@ export function useProjectModel(route?: ModelRoute) {
   const { toast } = useToast();
   const [selId, setSelId] = useState<string | null>(() => (route ? route.id : readParam()));
   const [showDone, setShowDone] = useState(false);
-  const [sortBy, setSortBy] = useState<SortMode>("manual");
+  // По умолчанию — по приоритету (владелец, 16.11.2026: «где задачи — всё по приоритетам»).
+  const [sortBy, setSortBy] = useState<SortMode>("priority");
   const [query, setQuery] = useState("");
   /** Tasks ticked in this session stay visible (struck) until reload, like the dashboard list. */
   const [justDone, setJustDone] = useState<Set<string>>(() => new Set());
@@ -253,7 +254,7 @@ export function useProjectModel(route?: ModelRoute) {
     if (sortBy === "date") o = [...openXs].sort((a, b) => (a.dueDate ?? "￿").localeCompare(b.dueDate ?? "￿"));
     if (sortBy === "priority") {
       const rank: Record<number, number> = { 1: 0, 2: 1, 3: 2, 0: 3 };
-      o = [...openXs].sort((a, b) => rank[a.priority] - rank[b.priority]);
+      o = [...openXs].sort((a, b) => rank[a.priority] - rank[b.priority] || (a.dueDate ?? "￿").localeCompare(b.dueDate ?? "￿"));
     }
     return [...o, ...doneXs];
   };

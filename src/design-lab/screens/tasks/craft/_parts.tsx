@@ -62,10 +62,14 @@ function matchesList(t: Task, list: SmartList): boolean {
   }
 }
 
-const byDue = (a: Task, b: Task) => {
+/**
+ * Порядок задач везде — по приоритету (владелец, 16.11.2026: «все чисто по
+ * приоритетам: высокие, и потом от высокого к низкому»): высокий → средний →
+ * низкий → без приоритета, внутри — по сроку. Закрытые — в конце.
+ */
+export const byPriority = (a: Task, b: Task) => {
   if (a.done !== b.done) return Number(a.done) - Number(b.done);
-  const d = (a.dueDate ?? "￿").localeCompare(b.dueDate ?? "￿");
-  return d || PRIO_RANK[a.priority] - PRIO_RANK[b.priority];
+  return PRIO_RANK[a.priority] - PRIO_RANK[b.priority] || (a.dueDate ?? "￿").localeCompare(b.dueDate ?? "￿");
 };
 
 /** Right-hand date text: «с 05 окт.» when overdue, «до …» when snoozed, «готово 05 окт.» when done. */
@@ -127,7 +131,8 @@ export function useTasksModel() {
           (t.projectId ? (projectName.get(t.projectId) ?? "").toLowerCase().includes(q) : false))
     );
     if (list === "done") return out.sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
-    return freshFirst(out.sort(byDue));
+    // Без «свежих сверху»: новая задача сразу встаёт на место своего приоритета.
+    return out.sort(byPriority);
   };
 
   const freshFirst = (xs: Task[]): Task[] => {
