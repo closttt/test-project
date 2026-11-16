@@ -200,7 +200,21 @@ export function TaskRow({
           {(t.subtasks.length > 0 || t.tags.length > 0 || t.estimateMin) && (
             <span className="mt-0.5 flex flex-wrap items-center gap-x-3" style={{ ...T.meta, color: B.text3 }}>
               {t.subtasks.length > 0 && (
-                <button type="button" onClick={onToggleExpand} className="outline-none hover:text-white" style={tab}>
+                <button type="button" onClick={onToggleExpand} className="flex items-center gap-2 outline-none hover:text-white" style={tab}>
+                  <span
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={t.subtasks.length}
+                    aria-valuenow={subDone}
+                    aria-label="Готово подзадач"
+                    className="block h-[3px] w-24 overflow-hidden"
+                    style={{ background: B.l10 }}
+                  >
+                    <span
+                      className="block h-full"
+                      style={{ width: `${(subDone / t.subtasks.length) * 100}%`, background: B.lime, transition: `width .3s ${B.easeOut}` }}
+                    />
+                  </span>
                   {subDone}/{t.subtasks.length} подзадач
                 </button>
               )}
@@ -231,16 +245,19 @@ export function TaskRow({
         </span>
       </div>
       {expanded && t.subtasks.length > 0 && (
-        <ul className="pb-2 pl-[58px]" style={{ borderBottom: `1px solid ${B.l7}` }}>
+        <ul className="pb-2 pl-[34px] pt-1"style={{ borderBottom: `1px solid ${B.l7}` }}>
           {t.subtasks.map((s) => (
-            <li key={s.id} className="flex h-9 items-center gap-3">
+            <li key={s.id} className="flex h-7 items-center gap-2.5">
+              <span className="flex shrink-0" style={{ color: B.off }}>
+                <Hook size={10} />
+              </span>
               <Check done={s.done} onClick={() => toggleSubtask(t.id, s.id)} label={s.title} size={14} />
               <button
                 type="button"
                 onClick={() => card.openSubtask(t.id, s.id)}
                 title="Открыть карточку подзадачи"
                 className="min-w-0 flex-1 truncate text-left outline-none transition-colors hover:text-white focus-visible:underline"
-                style={{ ...T.body, color: s.done ? B.text4 : B.text2, textDecoration: s.done ? "line-through" : undefined }}
+                style={{ ...T.meta, color: s.done ? B.text4 : B.text2, textDecoration: s.done ? "line-through" : undefined }}
               >
                 {s.title}
               </button>
