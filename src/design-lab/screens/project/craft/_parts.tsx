@@ -505,7 +505,8 @@ export function TaskRow({
   showSection?: boolean;
   draggable?: boolean;
 }) {
-  const [subs, setSubs] = useState(false);
+  // Subtasks show by default on an open task — a big task reads as its breakdown; a done one stays folded.
+  const [subs, setSubs] = useState(!t.done);
   const { text, late } = dueText(t);
   const doneSub = t.subtasks.filter((s) => s.done).length;
   return (
@@ -541,11 +542,25 @@ export function TaskRow({
                 e.stopPropagation();
                 setSubs((s) => !s);
               }}
-              className="inline-flex shrink-0 items-center gap-1 px-2 transition-colors duration-150 hover:bg-[#202025]"
-              style={{ height: 24, borderRadius: 999, ...T.foot, color: subs ? C.text : C.text3 }}
+              className="inline-flex shrink-0 items-center gap-1.5 px-2 transition-colors duration-150 hover:bg-[#202025]"
+              style={{ height: 24, borderRadius: 999, ...T.foot, color: subs ? C.text2 : C.text3 }}
               title={subs ? "Свернуть подзадачи" : "Показать подзадачи"}
             >
               {subs ? <ChevronDown size={12} strokeWidth={2} /> : <ChevronRight size={12} strokeWidth={2} />}
+              <span
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={t.subtasks.length}
+                aria-valuenow={doneSub}
+                aria-label="Готово подзадач"
+                className="block overflow-hidden"
+                style={{ width: 56, height: 4, borderRadius: 999, background: C.line2 }}
+              >
+                <span
+                  className="block h-full transition-[width] duration-300"
+                  style={{ width: `${(doneSub / t.subtasks.length) * 100}%`, borderRadius: 999, background: doneSub === t.subtasks.length ? C.green : C.accent }}
+                />
+              </span>
               {doneSub}/{t.subtasks.length}
             </button>
           )}
@@ -576,9 +591,9 @@ export function SubList({ t, m, padLeft, padRight }: { t: Task; m: ProjectModel;
   return (
     <div className="flex flex-col pb-2" style={{ paddingLeft: padLeft, paddingRight: padRight }}>
       {t.subtasks.map((s) => (
-        <div key={s.id} className="flex items-center gap-2.5" style={{ minHeight: 34 }}>
-          <RoundCheck done={s.done} size={16} onChange={() => m.actions.toggleSubtask(t.id, s.id)} />
-          <span className="truncate" style={{ ...T.body, color: s.done ? C.text3 : C.text2, textDecoration: s.done ? "line-through" : undefined }}>
+        <div key={s.id} className="flex items-center gap-2" style={{ minHeight: 28 }}>
+          <RoundCheck done={s.done} size={14} onChange={() => m.actions.toggleSubtask(t.id, s.id)} />
+          <span className="truncate" style={{ ...T.body, fontSize: 13, color: s.done ? C.text3 : C.text2, textDecoration: s.done ? "line-through" : undefined }}>
             {s.title}
           </span>
           {s.dueDate && !s.done && (

@@ -320,9 +320,7 @@ export default function ProjectDetail() {
       sections={sections}
       projects={otherProjects}
       currentProjectId={p.id}
-      // Subtasks are visible by default on open tasks (a big task shows its breakdown); the set
-      // holds the tasks whose default was flipped by the chevron.
-      expanded={t.done ? expanded.has(t.id) : !expanded.has(t.id)}
+      expanded={expanded.has(t.id)}
       onToggleExpand={() => toggleExpanded(t.id)}
       onOpen={() => card.open(t.id)}
     />
