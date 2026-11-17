@@ -807,22 +807,6 @@ export default function TasksByTime() {
   useEffect(() => {
     if (wanted) setEditId(wanted);
   }, [wanted]);
-  // «N» — new task, when nothing is being typed and no window is open.
-  const busy = !!(editId || draft || meetingOpen || routinesOpen);
-  useEffect(() => {
-    if (busy) return;
-    const key = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (e.ctrlKey || e.metaKey || e.altKey || el?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [role=menu]")) return;
-      if (e.key.toLowerCase() === "n" || e.key.toLowerCase() === "т") {
-        e.preventDefault();
-        setDraft({ projectId: project && project !== "none" ? project : undefined });
-      }
-    };
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, [busy, project]);
-
   const pid = project === "" ? undefined : project === "none" ? null : project;
   const projectId = project && project !== "none" ? project : undefined;
   const open = (t: Task) => setEditId(t.id);
