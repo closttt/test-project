@@ -27,6 +27,7 @@ import { meetingStart } from "@/lib/meetingAlerts";
 import { useData } from "@/store/DataProvider";
 import type { Meeting, Priority, Task } from "@/types";
 import {
+  CardSubs,
   DatePop,
   LISTS,
   ListTabs,
@@ -40,7 +41,7 @@ import {
   ProjectChip,
   QuickAdd,
   RoundCheckBtn,
-  SubCount,
+  SubToggle,
   TaskEditor,
   TaskLine,
   TimeMeta,
@@ -109,6 +110,8 @@ function TaskCard({ t, m, onOpen, mark, showDate, compact }: { t: Task; m: Tasks
   const pname = t.projectId ? m.projectName.get(t.projectId) : undefined;
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const closePop = useCallback(() => setAnchor(null), []);
+  // Subtasks show under an open task by default — a big task reads as its breakdown (owner, 2026-11-17).
+  const [subs, setSubs] = useState(!t.done);
   const chipText = !t.done && (late || (showDate && t.dueDate)) ? text : "";
   return (
     <article
@@ -174,7 +177,7 @@ function TaskCard({ t, m, onOpen, mark, showDate, compact }: { t: Task; m: Tasks
           <PrioChip p={t.priority} />
           {pname && t.projectId && <ProjectChip id={t.projectId} name={pname} on="raise" />}
           <TagChips tags={t.tags} />
-          <SubCount t={t} />
+          <SubToggle t={t} open={subs} onToggle={() => setSubs((v) => !v)} />
           <TimeMeta t={t} />
           <button
             type="button"
@@ -200,6 +203,7 @@ function TaskCard({ t, m, onOpen, mark, showDate, compact }: { t: Task; m: Tasks
           </button>
         </div>
       )}
+      {!compact && subs && t.subtasks.length > 0 && <CardSubs t={t} m={m} />}
       {anchor && (
         <DatePop
           anchor={anchor}

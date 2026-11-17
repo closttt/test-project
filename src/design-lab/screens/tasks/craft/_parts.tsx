@@ -366,6 +366,60 @@ export function SubCount({ t }: { t: Task }) {
   );
 }
 
+/** Subtasks on a card: progress bar + done/total; click folds the list under the card's meta line. */
+export function SubToggle({ t, open, onToggle }: { t: Task; open: boolean; onToggle: () => void }) {
+  if (!t.subtasks.length) return null;
+  const done = t.subtasks.filter((s) => s.done).length;
+  const all = done === t.subtasks.length;
+  return (
+    <button
+      type="button"
+      title={open ? "Свернуть подзадачи" : "Показать подзадачи"}
+      aria-expanded={open}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="inline-flex shrink-0 items-center gap-1.5 transition-colors duration-150 hover:text-[#F4F5F7]"
+      style={{ ...T.num, height: 22, fontWeight: 400, fontSize: 12, color: all ? TONE.green.fg : open ? C.text2 : C.text3 }}
+    >
+      <span
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={t.subtasks.length}
+        aria-valuenow={done}
+        aria-label="Готово подзадач"
+        className="block overflow-hidden"
+        style={{ width: 40, height: 4, borderRadius: 999, background: C.line2 }}
+      >
+        <span className="block h-full transition-[width] duration-300" style={{ width: `${(done / t.subtasks.length) * 100}%`, borderRadius: 999, background: all ? C.green : C.accent }} />
+      </span>
+      {done}/{t.subtasks.length}
+    </button>
+  );
+}
+
+/** The card's subtasks — compact rows with a check; ticking one doesn't open the card. */
+export function CardSubs({ t, m }: { t: Task; m: TasksModel }) {
+  return (
+    <div className="flex min-w-0 flex-col" style={{ paddingLeft: 28 }}>
+      {t.subtasks.map((s) => (
+        <div key={s.id} className="flex min-w-0 items-center gap-2" style={{ minHeight: 26 }}>
+          <RoundCheckBtn size={14} done={s.done} onChange={() => m.actions.toggleSub(t.id, s.id)} />
+          <span
+            className="min-w-0 truncate"
+            title={s.title}
+            style={{ fontSize: 13, lineHeight: 1.35, color: s.done ? C.text3 : C.text2, textDecorationLine: s.done ? "line-through" : "none", textDecorationColor: C.text3 }}
+          >
+            {s.title}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Tracked time (or the estimate, «~») with the clock glyph. */
 export function TimeMeta({ t }: { t: Task }) {
   const v = t.spentMin > 0 ? formatDuration(t.spentMin) : t.estimateMin ? `~${formatDuration(t.estimateMin)}` : "";
