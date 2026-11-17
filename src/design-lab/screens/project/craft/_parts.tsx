@@ -25,10 +25,12 @@ import {
 } from "lucide-react";
 
 import { Btn, C, Empty, IconBtn, R, Ring, RoundCheck, StatusPill, T, TONE, dashed, plural, type Tone } from "@/design-lab/screens/_kit/craft";
+import { MenuRow, SubAdd, SubMenu, TaskEditor as SharedTaskEditor, TaskMenu, takePrio, useTasksModel } from "@/design-lab/screens/tasks/craft/_parts";
 import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
 import { addDays, dueLabel, isOverdue, localDayStr } from "@/lib/format";
 import { groupTasksByTime } from "@/lib/taskGrouping";
+import { hasRange, rangeLabel } from "@/lib/weekBoard";
 import { projectHealth, type HealthLevel } from "@/lib/projectHealth";
 import { parseNaturalInput } from "@/lib/nlp";
 import { pushUndo } from "@/lib/undoStack";
@@ -55,7 +57,7 @@ export const HEALTH_LABEL: Record<HealthLevel, string> = { "on-track": "На т�
 /** Overdue reads amber, never red — both «риск» and «сорвано» are amber tints. */
 export const HEALTH_TONE: Record<HealthLevel, Tone> = { "on-track": "blue", "at-risk": "amber", "off-track": "amber", done: "green", empty: "neutral" };
 
-type SortMode = "manual" | "date" | "priority";
+export type SortMode = "manual" | "date" | "priority";
 
 // ── Small helpers ─────────────────────────────────────────────────────────────────────────────
 
@@ -112,6 +114,7 @@ export function dueText(t: Task): { text: string; late: boolean } {
   if (t.done) return { text: t.completedAt ? `закрыта ${dayLabel(t.completedAt)}` : "готово", late: false };
   if (!t.dueDate) return { text: "", late: false };
   if (isOverdue(t.dueDate)) return { text: `с ${dueLabel(t.dueDate)}`, late: true };
+  if (hasRange(t)) return { text: rangeLabel(t.startDate!, t.dueDate), late: false };
   return { text: dueLabel(t.dueDate), late: false };
 }
 
@@ -179,6 +182,8 @@ export function useProjectModel(route?: ModelRoute) {
   const data = useData();
   const { allProjects, projects, tasks, allTasks, notes, clients } = data;
   const { toast } = useToast();
+  /** The Tasks screen's model — one task editor and one right-click menu for both screens. */
+  const tm = useTasksModel();
   const [selId, setSelId] = useState<string | null>(() => (route ? route.id : readParam()));
   const [showDone, setShowDone] = useState(false);
   // По умолчанию — по приоритету (владелец, 16.11.2026: «где задачи — всё по приоритетам»).
@@ -289,13 +294,14 @@ export function useProjectModel(route?: ModelRoute) {
   const actions = {
     addTask: (raw: string, section?: string | null, extra?: { priority?: Priority; dueDate?: string }) => {
       if (!project || !raw.trim()) return;
-      const parsed = parseNaturalInput(raw);
+      const typed = takePrio(raw.trim());
+      const parsed = parseNaturalInput(typed.text);
       data.addTask({
-        title: parsed.title.trim() || raw.trim(),
+        title: parsed.title.trim() || typed.text,
         done: false,
         projectId: project.id,
         section: section || undefined,
-        priority: extra?.priority ?? 0,
+        priority: typed.priority ?? extra?.priority ?? 0,
         dueDate: extra?.dueDate || parsed.dueDate,
         tags: parsed.tags,
         important: parsed.important,
@@ -398,6 +404,7 @@ export function useProjectModel(route?: ModelRoute) {
     query,
     setQuery,
     actions,
+    tm,
   };
 }
 
@@ -507,8 +514,14 @@ export function TaskRow({
 }) {
   // Subtasks show by default on an open task — a big task reads as its breakdown; a done one stays folded.
   const [subs, setSubs] = useState(!t.done);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [adding, setAdding] = useState(false);
   const { text, late } = dueText(t);
   const doneSub = t.subtasks.filter((s) => s.done).length;
+  const addSub = () => {
+    setSubs(true);
+    setAdding(true);
+  };
   return (
     <div style={dashed}>
       <div
@@ -520,7 +533,11 @@ export function TaskRow({
           e.dataTransfer.effectAllowed = "move";
         }}
         onClick={() => onOpen(t)}
-        onKeyDown={(e) => e.key === "Enter" && onOpen(t)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY });
+        }}
+        onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen(t)}
         className="group grid cursor-pointer items-center gap-3 outline-none transition-colors duration-150 hover:bg-[#17171A] focus-visible:bg-[#17171A]"
         style={{ gridTemplateColumns: "22px minmax(0,1fr) auto 32px", minHeight: height, paddingLeft: pad, paddingRight: Math.max(8, pad - 12) }}
       >
@@ -564,6 +581,22 @@ export function TaskRow({
               {doneSub}/{t.subtasks.length}
             </button>
           )}
+          {!t.done && (
+            <button
+              type="button"
+              title="Добавить подзадачу"
+              aria-label="Добавить подзадачу"
+              onClick={(e) => {
+                e.stopPropagation();
+                addSub();
+              }}
+              className="inline-flex shrink-0 items-center gap-1 px-2 opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[#202025] hover:text-[#F4F5F7] focus-visible:opacity-100 group-hover:opacity-100"
+              style={{ height: 24, borderRadius: 999, ...T.foot, color: C.text3 }}
+            >
+              <Plus size={12} strokeWidth={2} />
+              подзадача
+            </button>
+          )}
         </div>
         <span className="whitespace-nowrap text-right" style={{ ...T.body, color: late ? TONE.amber.fg : C.text3 }}>
           {text}
@@ -582,18 +615,90 @@ export function TaskRow({
           <Trash2 size={16} strokeWidth={1.75} />
         </button>
       </div>
-      {subs && t.subtasks.length > 0 && <SubList t={t} m={m} padLeft={pad + 34} padRight={pad} />}
+      {((subs && t.subtasks.length > 0) || adding) && (
+        <SubList t={subs ? t : { ...t, subtasks: [] }} m={m} padLeft={pad + 34} padRight={pad} onOpen={() => onOpen(t)} adding={adding} onAddClose={() => setAdding(false)} />
+      )}
+      {menu && (
+        <TaskMenu
+          at={menu}
+          t={t}
+          m={m.tm}
+          onClose={() => setMenu(null)}
+          onAddSub={t.done ? undefined : addSub}
+          extra={
+            m.sections.length > 0 ? (
+              <>
+                {m.sections
+                  .filter((sec) => sec !== t.section)
+                  .map((sec) => (
+                    <MenuRow
+                      key={sec}
+                      onClick={() => {
+                        m.actions.moveToSection(t.id, sec);
+                        setMenu(null);
+                      }}
+                    >
+                      В секцию «{sec}»
+                    </MenuRow>
+                  ))}
+                {t.section && m.sections.includes(t.section) && (
+                  <MenuRow
+                    onClick={() => {
+                      m.actions.moveToSection(t.id, null);
+                      setMenu(null);
+                    }}
+                  >
+                    Убрать из секции
+                  </MenuRow>
+                )}
+              </>
+            ) : undefined
+          }
+        />
+      )}
     </div>
   );
 }
 
-export function SubList({ t, m, padLeft, padRight }: { t: Task; m: ProjectModel; padLeft: number; padRight: number }) {
+export function SubList({
+  t,
+  m,
+  padLeft,
+  padRight,
+  onOpen,
+  adding,
+  onAddClose,
+}: {
+  t: Task;
+  m: ProjectModel;
+  padLeft: number;
+  padRight: number;
+  /** Click on a subtask's title opens the parent task (where it is renamed, dated, reordered). */
+  onOpen?: () => void;
+  adding?: boolean;
+  onAddClose?: () => void;
+}) {
+  const [menu, setMenu] = useState<{ s: Task["subtasks"][number]; at: { x: number; y: number } } | null>(null);
   return (
     <div className="flex flex-col pb-2" style={{ paddingLeft: padLeft, paddingRight: padRight }}>
+      {menu && <SubMenu at={menu.at} t={t} s={menu.s} m={m.tm} onClose={() => setMenu(null)} />}
       {t.subtasks.map((s) => (
-        <div key={s.id} className="flex items-center gap-2" style={{ minHeight: 28 }}>
+        <div
+          key={s.id}
+          className="flex items-center gap-2"
+          style={{ minHeight: 28 }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenu({ s, at: { x: e.clientX, y: e.clientY } });
+          }}
+        >
           <RoundCheck done={s.done} size={14} onChange={() => m.actions.toggleSubtask(t.id, s.id)} />
-          <span className="truncate" style={{ ...T.body, fontSize: 13, color: s.done ? C.text3 : C.text2, textDecoration: s.done ? "line-through" : undefined }}>
+          {!!s.priority && !s.done && <span className="shrink-0" style={{ width: 5, height: 5, borderRadius: 9, background: PRIO_DOT[s.priority] }} title={PRIO_LABEL[s.priority]} />}
+          <span
+            className={`truncate ${onOpen ? "cursor-pointer hover:text-[#F4F5F7]" : ""}`}
+            onClick={onOpen}
+            style={{ ...T.body, fontSize: 13, color: s.done ? C.text3 : C.text2, textDecoration: s.done ? "line-through" : undefined }}
+          >
             {s.title}
           </span>
           {s.dueDate && !s.done && (
@@ -603,6 +708,36 @@ export function SubList({ t, m, padLeft, padRight }: { t: Task; m: ProjectModel;
           )}
         </div>
       ))}
+      {adding && <SubAdd onAdd={(v) => m.tm.actions.addSubs(t.id, v)} onClose={onAddClose} />}
+    </div>
+  );
+}
+
+/** «Приоритет · Срок · Вручную» — the order of open tasks inside every section. */
+export function SortTabs({ m }: { m: ProjectModel }) {
+  const items: { key: SortMode; label: string }[] = [
+    { key: "priority", label: "По приоритету" },
+    { key: "date", label: "По сроку" },
+    { key: "manual", label: "Как добавлены" },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-1" role="tablist" aria-label="Порядок задач">
+      {items.map((it) => {
+        const on = m.sortBy === it.key;
+        return (
+          <button
+            key={it.key}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => m.setSortBy(it.key)}
+            className={`whitespace-nowrap px-3 transition-colors duration-150 ${on ? "" : "hover:bg-[#161619]"}`}
+            style={{ height: 32, borderRadius: 999, fontSize: 13, background: on ? "rgba(10,132,255,0.14)" : "transparent", color: on ? C.text : C.text2 }}
+          >
+            {it.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1229,7 +1364,7 @@ export function useEditors(m: ProjectModel) {
     openProject: () => setProjectOpen(true),
     node: (
       <>
-        {task && <TaskEditor key={task.id} task={task} m={m} onClose={() => setTaskId(null)} />}
+        {task && <SharedTaskEditor taskId={task.id} m={m.tm} onClose={() => setTaskId(null)} />}
         {projectOpen && m.project && <ProjectEditor m={m} onClose={() => setProjectOpen(false)} />}
       </>
     ),

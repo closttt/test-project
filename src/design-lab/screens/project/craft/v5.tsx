@@ -41,6 +41,7 @@ import {
   ProjectSwitcher,
   STATUS_LABEL,
   SectionTitle,
+  SortTabs,
   TaskRow,
   dur,
   useEditors,
@@ -365,7 +366,10 @@ function ProjectPage({ id }: { id?: string }) {
           <Banner m={m} onEdit={ed.openProject} onBack={toList} />
           <div className="grid grid-cols-1 gap-10 sm:px-2 lg:grid-cols-[minmax(0,1fr)_clamp(200px,18vw,248px)]">
             <article className="flex min-w-0 max-w-[780px] flex-col gap-10">
-              <Lead m={m} />
+              <div className="flex flex-col gap-4">
+                <Lead m={m} />
+                {m.open > 1 && <SortTabs m={m} />}
+              </div>
               {topAdd && (
                 <div id="doc-add" data-lab-block="add" className="scroll-mt-6" style={{ ...dashed, backgroundPosition: "left top" }}>
                   <InlineAdd pad={4} height={48} onAdd={(v) => m.actions.addTask(v, null)} placeholder="Новая задача" />

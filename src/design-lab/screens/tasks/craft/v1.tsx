@@ -15,14 +15,15 @@
  *   └──────────────────────────────────────────────────────────────────────────┘
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleCheckBig, FolderKanban, Plus, Repeat, Trash2, Video } from "lucide-react";
+import { useLocation } from "react-router-dom";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleCheckBig, CornerDownRight, FolderKanban, Plus, Repeat, Trash2, Video } from "lucide-react";
 
 import { Btn, C, Empty, IconBtn, R, Ring, T, TONE, dashed, plural } from "@/design-lab/screens/_kit/craft";
 import { Select, TagChips, metaChip } from "@/design-lab/screens/_kit/controls";
 import { CraftShell } from "@/design-lab/screens/_kit/craftShell";
-import { addDays, formatDate, localDayStr, todayStr } from "@/lib/format";
+import { addDays, formatDate, formatDuration, isOverdue, localDayStr, todayStr } from "@/lib/format";
 import { groupByTime } from "@/lib/taskGrouping";
-import { BACKLOG_KEY, weekColumnOf, weekDays, weekRangeLabel } from "@/lib/weekBoard";
+import { BACKLOG_KEY, hasRange, onDay, weekColumnOf, weekDays, weekRangeLabel } from "@/lib/weekBoard";
 import { meetingStart } from "@/lib/meetingAlerts";
 import { useData } from "@/store/DataProvider";
 import type { Meeting, Priority, Task } from "@/types";
@@ -42,6 +43,7 @@ import {
   QuickAdd,
   RoundCheckBtn,
   SubToggle,
+  TaskMenu,
   TaskEditor,
   TaskLine,
   TimeMeta,
@@ -112,7 +114,10 @@ function TaskCard({ t, m, onOpen, mark, showDate, compact }: { t: Task; m: Tasks
   const closePop = useCallback(() => setAnchor(null), []);
   // Subtasks show under an open task by default — a big task reads as its breakdown (owner, 2026-11-17).
   const [subs, setSubs] = useState(!t.done);
-  const chipText = !t.done && (late || (showDate && t.dueDate)) ? text : "";
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const [adding, setAdding] = useState(false);
+  const chipText = !t.done && (late || hasRange(t) || (showDate && t.dueDate)) ? text : "";
   return (
     <article
       data-lab-block={mark ? "card" : undefined}
@@ -124,6 +129,10 @@ function TaskCard({ t, m, onOpen, mark, showDate, compact }: { t: Task; m: Tasks
         e.dataTransfer.effectAllowed = "move";
       }}
       onClick={onOpen}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
       onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen()}
       className="group relative flex cursor-pointer flex-col gap-2 outline-none transition-colors duration-150 hover:bg-[#202025] focus-visible:bg-[#202025] active:cursor-grabbing"
       style={{
@@ -203,7 +212,25 @@ function TaskCard({ t, m, onOpen, mark, showDate, compact }: { t: Task; m: Tasks
           </button>
         </div>
       )}
-      {!compact && subs && t.subtasks.length > 0 && <CardSubs t={t} m={m} />}
+      {!compact && ((subs && t.subtasks.length > 0) || adding) && (
+        <CardSubs t={subs ? t : { ...t, subtasks: [] }} m={m} adding={adding} onAddClose={() => setAdding(false)} />
+      )}
+      {menu && (
+        <TaskMenu
+          at={menu}
+          t={t}
+          m={m}
+          onClose={closeMenu}
+          onAddSub={
+            compact
+              ? undefined
+              : () => {
+                  setSubs(true);
+                  setAdding(true);
+                }
+          }
+        />
+      )}
       {anchor && (
         <DatePop
           anchor={anchor}
@@ -214,6 +241,36 @@ function TaskCard({ t, m, onOpen, mark, showDate, compact }: { t: Task; m: Tasks
         />
       )}
     </article>
+  );
+}
+
+/**
+ * A subtask with its own date, shown on that day under the day's tasks — a big task is planned piece
+ * by piece (owner, 2026-11-17). Tick closes the piece; click opens the parent task.
+ */
+function SubCard({ t, s, m, onOpen }: { t: Task; s: Task["subtasks"][number]; m: TasksModel; onOpen: () => void }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen()}
+      className="flex min-w-0 cursor-pointer items-start gap-2.5 outline-none transition-colors duration-150 hover:bg-[#202025] focus-visible:bg-[#202025]"
+      style={{ padding: "9px 12px", borderRadius: R.small, boxShadow: `inset 0 0 0 1px ${C.line}` }}
+    >
+      <span className="pt-0.5">
+        <RoundCheckBtn size={16} done={s.done} onChange={() => m.actions.toggleSub(t.id, s.id)} />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate" style={{ fontSize: 14, lineHeight: 1.35, color: s.done ? C.text3 : C.text, textDecorationLine: s.done ? "line-through" : "none" }}>
+          {s.title}
+        </span>
+        <span className="flex min-w-0 items-center gap-1" style={{ fontSize: 12, color: C.text3 }}>
+          <CornerDownRight size={12} strokeWidth={1.75} className="shrink-0" />
+          <span className="truncate">{t.title}</span>
+        </span>
+      </span>
+    </div>
   );
 }
 
@@ -370,7 +427,10 @@ function DayColumn({
   meetings,
   now,
   onMeetingToggle,
+  pieces,
 }: {
+  /** Subtasks dated to this day whose parent task stands elsewhere. */
+  pieces: { t: Task; s: Task["subtasks"][number] }[];
   d: { date: string; label: string; short: string; isToday: boolean };
   items: Task[];
   m: TasksModel;
@@ -384,10 +444,14 @@ function DayColumn({
   now: number;
   onMeetingToggle: (id: string) => void;
 }) {
-  const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: d.date }));
+  const { over, props } = useDrop((id) => m.actions.moveToDay(id, d.date));
   // Every task of the day is shown — no «Ещё N» (owner, 2026-10-12).
   const shown = items;
   const accent = d.isToday ? "#5AA9FF" : undefined;
+  // Day load: open tasks against the day limit from settings, and the sum of their estimates.
+  const openN = items.filter((t) => !t.done).length;
+  const est = items.reduce((sum, t) => sum + (t.done ? 0 : t.estimateMin || 0), 0);
+  const overLimit = m.dayLimit > 0 && openN > m.dayLimit;
   return (
     <div
       {...props}
@@ -403,13 +467,25 @@ function DayColumn({
             {d.isToday ? `сегодня · ${d.short}` : d.short}
           </div>
         </div>
-        {items.length > 0 && <span style={{ ...T.body, ...T.num, fontWeight: 400, color: accent ?? C.text3 }}>{items.length}</span>}
+        {items.length > 0 && (
+          <span
+            className="flex shrink-0 flex-col items-end"
+            title={overLimit ? `Больше лимита дня (${m.dayLimit}) — часть стоит перенести` : est ? "Задач · сумма оценок" : undefined}
+            style={{ ...T.body, ...T.num, fontWeight: 400, color: overLimit ? TONE.amber.fg : accent ?? C.text3 }}
+          >
+            {m.dayLimit > 0 ? `${openN}/${m.dayLimit}` : items.length}
+            {est > 0 && <span style={{ fontSize: 12, lineHeight: 1.3, color: overLimit ? TONE.amber.fg : C.text3 }}>~{formatDuration(est)}</span>}
+          </span>
+        )}
       </div>
       {meetings.map((mt) => (
         <MeetingCard key={mt.id} mt={mt} now={now} onToggle={() => onMeetingToggle(mt.id)} />
       ))}
       {shown.map((t, i) => (
         <TaskCard key={t.id} t={t} m={m} onOpen={() => onOpen(t)} mark={markFirst && i === 0} />
+      ))}
+      {pieces.map(({ t, s }) => (
+        <SubCard key={s.id} t={t} s={s} m={m} onOpen={() => onOpen(t)} />
       ))}
       <div className="mt-auto flex flex-col gap-1">
         <DayAdd onAdd={(v) => m.actions.add(v, { dueDate: d.date, projectId: pid ?? undefined })} />
@@ -461,7 +537,7 @@ function backlogGroups(items: Task[], by: BacklogGroupBy, m: TasksModel): Backlo
 /** One group of the backlog: its own drop target, at most a row or two of cards until «Ещё». */
 function BacklogSection({ g, m, pid, onOpen }: { g: BacklogGroup; m: TasksModel; pid: string | null | undefined; onOpen: (t: Task) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: undefined, ...g.patch }));
+  const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: undefined, startDate: undefined, ...g.patch }));
   const shown = expanded ? g.items : g.items.slice(0, BACKLOG_CAP);
   const open = g.items.filter((t) => !t.done).length;
   return (
@@ -504,7 +580,7 @@ function Backlog({ items, m, pid, onOpen }: { items: Task[]; m: TasksModel; pid:
     setUi(next);
     saveBacklogUi(next);
   };
-  const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: undefined }));
+  const { over, props } = useDrop((id) => m.actions.update(id, { dueDate: undefined, startDate: undefined }));
   const openN = items.filter((t) => !t.done).length;
   const list = prio === null ? items : items.filter((t) => t.priority === prio);
   const groups = backlogGroups(list, ui.by, m).filter((g) => g.items.length > 0);
@@ -574,7 +650,7 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
   const days = useMemo(() => weekDays(offset, m.weekStartsMonday), [offset, m.weekStartsMonday]);
   const pool = m.filter({ list: "all", query, projectId: pid });
   // Чисто по приоритету, без «свежих сверху» (16.11.2026).
-  const cols = days.map((d) => ({ d, items: pool.filter((t) => weekColumnOf(t, days) === d.date).sort(byPrio) }));
+  const cols = days.map((d) => ({ d, items: pool.filter((t) => onDay(t, d.date, days)).sort(byPrio) }));
   const backlog = pool.filter((t) => weekColumnOf(t, days) === BACKLOG_KEY).sort(byPrio);
   const inWeek = cols.reduce((s, c) => s + c.items.filter((t) => !t.done).length, 0);
   // Closed tasks per day: the day they were completed (else their due day); ones still showing
@@ -589,6 +665,10 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
     saveDoneOpen(next);
   };
   const firstCol = cols.findIndex((c) => c.items.length > 0);
+  // Dated subtasks stand on their own day — unless the parent task is already in that column.
+  const piecesBy = (date: string, inCol: Task[]) =>
+    pool.flatMap((t) => (t.done || inCol.includes(t) ? [] : t.subtasks.filter((s) => !s.done && s.dueDate === date).map((s) => ({ t, s }))));
+  const late = pool.filter((t) => !t.done && isOverdue(t.dueDate));
   // Meetings by day (calendar sync + manual), earliest first. Hidden while a project filter is on —
   // meetings don't belong to projects.
   const { meetings, toggleMeeting } = useData();
@@ -618,9 +698,34 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
             </Btn>
           )}
         </div>
-        <span className="whitespace-nowrap" style={{ ...T.body, color: C.text3 }}>
-          {inWeek} {plural(inWeek, "задача", "задачи", "задач")} на неделе
-        </span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {late.length > 0 && (
+            <span className="flex items-center gap-1 whitespace-nowrap pl-3 pr-1" style={{ height: 36, borderRadius: 999, background: TONE.amber.bg, color: TONE.amber.fg, fontSize: 13 }}>
+              Просрочено {late.length}
+              <button
+                type="button"
+                title="Перенести все просроченные на сегодня"
+                onClick={() => m.actions.bulkReschedule(late.map((t) => t.id), 0)}
+                className="px-2.5 transition-colors hover:bg-[rgba(255,255,255,0.08)]"
+                style={{ height: 28, borderRadius: 999, color: C.text }}
+              >
+                на сегодня
+              </button>
+              <button
+                type="button"
+                title="Перенести все просроченные на завтра"
+                onClick={() => m.actions.bulkReschedule(late.map((t) => t.id), 1)}
+                className="px-2.5 transition-colors hover:bg-[rgba(255,255,255,0.08)]"
+                style={{ height: 28, borderRadius: 999, color: C.text }}
+              >
+                на завтра
+              </button>
+            </span>
+          )}
+          <span className="whitespace-nowrap" style={{ ...T.body, color: C.text3 }}>
+            {inWeek} {plural(inWeek, "задача", "задачи", "задач")} на неделе
+          </span>
+        </div>
       </header>
 
       {/* The previous page's proportions: a day is at least 13.5rem wide; when seven don't fit,
@@ -642,6 +747,7 @@ function WeekBoard({ m, query, pid, onOpen }: { m: TasksModel; query: string; pi
               meetings={meetingsBy(d.date)}
               now={now}
               onMeetingToggle={toggleMeeting}
+              pieces={piecesBy(d.date, items)}
             />
           ))}
         </div>
@@ -694,6 +800,28 @@ export default function TasksByTime() {
     setEditId(null);
     setDraft(null);
   }, []);
+
+  // The command palette (and any link) opens a task card: navigate("/tasks", { state: { openTaskId } }).
+  const location = useLocation();
+  const wanted = (location.state as { openTaskId?: string } | null)?.openTaskId;
+  useEffect(() => {
+    if (wanted) setEditId(wanted);
+  }, [wanted]);
+  // «N» — new task, when nothing is being typed and no window is open.
+  const busy = !!(editId || draft || meetingOpen || routinesOpen);
+  useEffect(() => {
+    if (busy) return;
+    const key = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.ctrlKey || e.metaKey || e.altKey || el?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [role=menu]")) return;
+      if (e.key.toLowerCase() === "n" || e.key.toLowerCase() === "т") {
+        e.preventDefault();
+        setDraft({ projectId: project && project !== "none" ? project : undefined });
+      }
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [busy, project]);
 
   const pid = project === "" ? undefined : project === "none" ? null : project;
   const projectId = project && project !== "none" ? project : undefined;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { weekStart, weekDays, weekRangeLabel, weekColumnOf, BACKLOG_KEY } from "@/lib/weekBoard";
+import { weekStart, weekDays, weekRangeLabel, weekColumnOf, BACKLOG_KEY, hasRange, onDay, rangeLabel } from "@/lib/weekBoard";
 import type { Task } from "@/types";
 
 function task(over: Partial<Task>): Task {
@@ -74,5 +74,30 @@ describe("weekColumnOf", () => {
     const next = weekDays(1, true, WED);
     expect(weekColumnOf(task({ dueDate: "2026-09-10" }), next, WED)).toBeNull();
     expect(weekColumnOf(task({ dueDate: "2026-09-30" }), next, WED)).toBe("2026-09-30");
+  });
+});
+
+describe("periods («с 1-го по 5-е»)", () => {
+  const days = weekDays(0, true, WED);
+
+  it("needs a start before the due date", () => {
+    expect(hasRange({ startDate: "2026-09-22", dueDate: "2026-09-25" })).toBe(true);
+    expect(hasRange({ startDate: "2026-09-25", dueDate: "2026-09-25" })).toBe(false);
+    expect(hasRange({ startDate: "2026-09-22" })).toBe(false);
+  });
+  it("labels within a month and across months", () => {
+    expect(rangeLabel("2026-11-01", "2026-11-05")).toBe("1–5 нояб.");
+    expect(rangeLabel("2026-10-28", "2026-11-03")).toBe("28 окт.–3 нояб.");
+  });
+  it("stands on every day of a running period, past days of the week included", () => {
+    const t = task({ startDate: "2026-09-22", dueDate: "2026-09-25" });
+    expect(days.filter((d) => onDay(t, d.date, days, WED)).map((d) => d.date)).toEqual(["2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25"]);
+  });
+  it("treats an overdue period like an overdue task — today's column only", () => {
+    const t = task({ startDate: "2026-09-10", dueDate: "2026-09-15" });
+    expect(days.filter((d) => onDay(t, d.date, days, WED)).map((d) => d.date)).toEqual([WED]);
+  });
+  it("leaves single dates to weekColumnOf", () => {
+    expect(days.filter((d) => onDay(task({ dueDate: "2026-09-25" }), d.date, days, WED)).map((d) => d.date)).toEqual(["2026-09-25"]);
   });
 });

@@ -3,9 +3,10 @@
  * store actions as pages/Tasks.tsx), the list row (draggable onto a day of the week board), quick
  * add, pill tabs and the task editor (the main screen's TaskEditor, extended with tags and subtasks).
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, CalendarClock, Check, Clock3, FolderKanban, ListChecks, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpRight, CalendarClock, CalendarDays, Check, Clock3, CornerUpRight, FolderKanban, ListChecks, Plus, Trash2, X } from "lucide-react";
 
 import { Btn, C, IconBtn, PRIO_TONE, R, T, TONE, dashed } from "@/design-lab/screens/_kit/craft";
 import { CalendarPanel, DatePicker, Floating, Select, TagChips, TagInput, metaChip } from "@/design-lab/screens/_kit/controls";
@@ -13,11 +14,12 @@ import { useData } from "@/store/DataProvider";
 import { useToast } from "@/store/ToastProvider";
 import { addDays, dueLabel, formatDate, formatDuration, isOverdue, isToday, isUpcoming, todayStr } from "@/lib/format";
 import { isSnoozed } from "@/lib/taskGrouping";
+import { hasRange, rangeLabel, weekStart } from "@/lib/weekBoard";
 import { blockingTasks } from "@/lib/dependencies";
 import { parseNaturalInput } from "@/lib/nlp";
 import { pushUndo } from "@/lib/undoStack";
 import { FIXED_TAGS } from "@/lib/tags";
-import type { Meeting, Priority, Task } from "@/types";
+import type { Meeting, Priority, Subtask, Task } from "@/types";
 
 // ── Constants ─────────────────────────────────────────────────────────────────────────────────
 
@@ -78,7 +80,26 @@ export function dueText(t: Task): { text: string; late: boolean } {
   if (isSnoozed(t)) return { text: `до ${dueLabel(t.snoozedUntil!)}`, late: false };
   if (!t.dueDate) return { text: "без срока", late: false };
   if (isOverdue(t.dueDate)) return { text: `с ${dueLabel(t.dueDate)}`, late: true };
+  if (hasRange(t)) return { text: rangeLabel(t.startDate!, t.dueDate), late: false };
   return { text: dueLabel(t.dueDate), late: false };
+}
+
+/**
+ * Priority typed in a quick-add line: «п1» / «p1» = высокий, «п2» = средний, «п3» = низкий. The token
+ * is cut out of the title, so a task added from a line lands on its place straight away.
+ */
+export function takePrio(raw: string): { text: string; priority?: Priority } {
+  const hit = raw.match(/(^|\s)[pPпП]([1-3])(?=\s|$)/);
+  if (!hit) return { text: raw };
+  return { text: raw.replace(hit[0], " ").replace(/\s+/g, " ").trim(), priority: Number(hit[2]) as Priority };
+}
+
+/** A pasted or typed block → subtask titles: one per line, list markers («- », «• », «1. », «[ ] ») cut. */
+export function splitLines(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*(?:[-–—•*]|\d+[.)]|\[[ xX]?\])\s+/, "").trim())
+    .filter(Boolean);
 }
 
 // ── Model ─────────────────────────────────────────────────────────────────────────────────────
@@ -93,7 +114,7 @@ interface FilterOpts {
 export function useTasksModel() {
   const data = useData();
   const { tasks, projects, gamification, completionLog, settings } = data;
-  const { toggleTask, addTask, deleteTask, restoreTask, updateTask, toggleSubtask, addSubtask, deleteSubtask } = data;
+  const { toggleTask, addTask, deleteTask, restoreTask, updateTask, toggleSubtask, addSubtask, updateSubtask, deleteSubtask } = data;
   const { toast } = useToast();
   /** Ticked in this session — stay in their list struck through instead of vanishing. */
   const [justClosed, setJustClosed] = useState<Set<string>>(() => new Set());
@@ -158,7 +179,8 @@ export function useTasksModel() {
       toggleTask(t.id);
     },
     add: (raw: string, extra: { dueDate?: string; projectId?: string; priority?: Priority } = {}) => {
-      const title = raw.trim();
+      const typed = takePrio(raw.trim());
+      const title = typed.text;
       if (!title) return "";
       const parsed = parseNaturalInput(title);
       const id = addTask({
@@ -166,7 +188,7 @@ export function useTasksModel() {
         done: false,
         dueDate: parsed.dueDate ?? extra.dueDate,
         projectId: extra.projectId,
-        priority: extra.priority ?? 0,
+        priority: typed.priority ?? extra.priority ?? 0,
         tags: parsed.tags,
         important: parsed.important,
         remindAt: parsed.remindAt,
@@ -198,17 +220,58 @@ export function useTasksModel() {
       toast("Задача добавлена");
       return id;
     },
-    update: (id: string, patch: Partial<Task>) => updateTask(id, patch),
+    /** A new due date before (or without) the period's start ends the period. */
+    update: (id: string, patch: Partial<Task>) => {
+      const t = tasks.find((x) => x.id === id);
+      if (t?.startDate && "dueDate" in patch && !("startDate" in patch) && (!patch.dueDate || t.startDate >= patch.dueDate)) patch = { ...patch, startDate: undefined };
+      updateTask(id, patch);
+    },
+    /** Dropped on a day: a single date moves there; a period keeps its length and starts there. */
+    moveToDay: (id: string, date: string) => {
+      const t = tasks.find((x) => x.id === id);
+      if (t && hasRange(t)) {
+        const len = Math.round((new Date(t.dueDate!).getTime() - new Date(t.startDate!).getTime()) / 86400000);
+        updateTask(id, { startDate: date, dueDate: addDays(date, len) });
+      } else updateTask(id, { dueDate: date, startDate: undefined });
+    },
     toggleSub: toggleSubtask,
     addSub: addSubtask,
     deleteSub: deleteSubtask,
+    updateSub: updateSubtask,
+    /** One line or a pasted list → subtasks (one per line). */
+    addSubs: (taskId: string, text: string) => splitLines(text).forEach((line) => addSubtask(taskId, line)),
+    moveSub: (t: Task, subId: string, dir: -1 | 1) => {
+      const xs = [...t.subtasks];
+      const i = xs.findIndex((s) => s.id === subId);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= xs.length) return;
+      [xs[i], xs[j]] = [xs[j], xs[i]];
+      updateTask(t.id, { subtasks: xs });
+    },
+    /** A subtask that outgrew its parent becomes a task of the same project (date and priority kept). */
+    subToTask: (t: Task, sub: Subtask) => {
+      addTask({
+        title: sub.title,
+        description: sub.description,
+        done: false,
+        projectId: t.projectId,
+        section: t.section,
+        priority: sub.priority ?? t.priority,
+        dueDate: sub.dueDate ?? t.dueDate,
+        tags: t.tags,
+      });
+      deleteSubtask(t.id, sub.id);
+      const where = t.projectId ? projectName.get(t.projectId) : undefined;
+      toast(`«${sub.title}» — теперь отдельная задача${where ? ` в «${where}»` : ""}${sub.dueDate ?? t.dueDate ? `, ${dueLabel((sub.dueDate ?? t.dueDate)!)}` : ""}`);
+    },
     bulkReschedule: (ids: string[], offset: number) => {
+      const before = ids.map((id) => [id, tasks.find((t) => t.id === id)?.dueDate] as const);
       ids.forEach((id) => updateTask(id, { dueDate: addDays(new Date(), offset) }));
-      toast(`Перенесено: ${ids.length}`);
+      toast(`Перенесено: ${ids.length}`, { actionLabel: "Вернуть", onAction: () => before.forEach(([id, d]) => updateTask(id, { dueDate: d })) });
     },
   };
 
-  return { tasks, projects, projectName, allTags, counts, filter, freshFirst, goal, closedToday, weekStartsMonday: settings.weekStartsMonday, actions };
+  return { tasks, projects, projectName, allTags, counts, filter, freshFirst, goal, closedToday, weekStartsMonday: settings.weekStartsMonday, dayLimit: settings.dailyFocusLimit || 0, actions };
 }
 
 export type TasksModel = ReturnType<typeof useTasksModel>;
@@ -401,22 +464,270 @@ export function SubToggle({ t, open, onToggle }: { t: Task; open: boolean; onTog
 }
 
 /** The card's subtasks — compact rows with a check; ticking one doesn't open the card. */
-export function CardSubs({ t, m }: { t: Task; m: TasksModel }) {
+export function CardSubs({ t, m, adding, onAddClose }: { t: Task; m: TasksModel; adding?: boolean; onAddClose?: () => void }) {
+  const [menu, setMenu] = useState<{ s: Subtask; at: { x: number; y: number } } | null>(null);
+  const closeMenu = () => setMenu(null);
   return (
     <div className="flex min-w-0 flex-col" style={{ paddingLeft: 28 }}>
+      {menu && <SubMenu at={menu.at} t={t} s={menu.s} m={m} onClose={closeMenu} />}
       {t.subtasks.map((s) => (
-        <div key={s.id} className="flex min-w-0 items-center gap-2" style={{ minHeight: 26 }}>
+        <div
+          key={s.id}
+          className="flex min-w-0 items-center gap-2"
+          style={{ minHeight: 26 }}
+          title="Правый клик — сделать отдельной задачей или удалить"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenu({ s, at: { x: e.clientX, y: e.clientY } });
+          }}
+        >
           <RoundCheckBtn size={14} done={s.done} onChange={() => m.actions.toggleSub(t.id, s.id)} />
+          {!!s.priority && !s.done && <span className="shrink-0" style={{ width: 5, height: 5, borderRadius: 9, background: PRIO_DOT[s.priority] }} title={PRIO_LABEL[s.priority]} />}
           <span
-            className="min-w-0 truncate"
+            className="min-w-0 flex-1 truncate"
             title={s.title}
             style={{ fontSize: 13, lineHeight: 1.35, color: s.done ? C.text3 : C.text2, textDecorationLine: s.done ? "line-through" : "none", textDecorationColor: C.text3 }}
           >
             {s.title}
           </span>
+          {s.dueDate && !s.done && (
+            <span className="shrink-0 whitespace-nowrap" style={{ fontSize: 12, color: isOverdue(s.dueDate) ? TONE.amber.fg : C.text3 }}>
+              {dueLabel(s.dueDate)}
+            </span>
+          )}
         </div>
       ))}
+      {adding && <SubAdd onAdd={(v) => m.actions.addSubs(t.id, v)} onClose={onAddClose} />}
     </div>
+  );
+}
+
+/** One-line «+ подзадача» right on a card or a row: Enter adds and stays for the next one, Esc / blur closes. A pasted list adds every line. */
+export function SubAdd({ onAdd, onClose }: { onAdd: (v: string) => void; onClose?: () => void }) {
+  const [v, setV] = useState("");
+  return (
+    <div className="flex min-w-0 items-center gap-2" style={{ minHeight: 28 }} onClick={(e) => e.stopPropagation()}>
+      <Plus size={14} strokeWidth={1.75} color={C.text3} className="shrink-0" />
+      <input
+        autoFocus
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        onBlur={() => {
+          if (v.trim()) onAdd(v);
+          onClose?.();
+        }}
+        onPaste={(e) => {
+          const text = e.clipboardData.getData("text");
+          if (!/\n/.test(text.trim())) return;
+          e.preventDefault();
+          onAdd(text);
+        }}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter" && v.trim()) {
+            onAdd(v);
+            setV("");
+          }
+          if (e.key === "Escape") {
+            setV("");
+            onClose?.();
+          }
+        }}
+        placeholder="Подзадача — Enter"
+        className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[#5E6068]"
+        style={{ fontSize: 13, color: C.text }}
+      />
+    </div>
+  );
+}
+
+// ── Right-click menu ──────────────────────────────────────────────────────────────────────────
+
+const menuItem = "flex w-full items-center gap-2.5 px-3 text-left transition-colors duration-150 hover:bg-[#202025]";
+
+/** A row of the right-click menu. */
+export function MenuRow({ children, onClick, danger, hint }: { children: ReactNode; onClick: () => void; danger?: boolean; hint?: string }) {
+  return (
+    <button type="button" onClick={onClick} className={menuItem} style={{ minHeight: 34, borderRadius: 8, fontSize: 13, color: danger ? TONE.red.fg : C.text }}>
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {hint && <span style={{ fontSize: 12, color: C.text3 }}>{hint}</span>}
+    </button>
+  );
+}
+
+const PRIO_SHORT: Record<number, string> = { 1: "Высокий", 2: "Средний", 3: "Низкий", 0: "Нет" };
+
+/** The right-click popup itself: at the cursor, kept inside the window, closes on a click outside, Esc or scroll. */
+export function PopMenu({ at, onClose, children, width = 236, label }: { at: { x: number; y: number }; onClose: () => void; children: ReactNode; width?: number; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: at.x, top: at.y });
+  useEffect(() => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) setPos({ left: Math.max(8, Math.min(at.x, window.innerWidth - r.width - 8)), top: Math.max(8, Math.min(at.y, window.innerHeight - r.height - 8)) });
+  }, [at.x, at.y, width, children]);
+  useEffect(() => {
+    const down = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
+    };
+    const scroll = (e: Event) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", down, true);
+    document.addEventListener("keydown", key, true);
+    window.addEventListener("scroll", scroll, true);
+    return () => {
+      document.removeEventListener("mousedown", down, true);
+      document.removeEventListener("keydown", key, true);
+      window.removeEventListener("scroll", scroll, true);
+    };
+  }, [onClose]);
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+  return createPortal(
+    <div
+      ref={ref}
+      role="menu"
+      aria-label={label}
+      className="fixed z-[70] flex flex-col gap-0.5 p-1.5"
+      style={{ left: pos.left, top: pos.top, width, background: C.panel, borderRadius: 14, boxShadow: `inset 0 0 0 1px ${C.line2}, 0 18px 50px rgba(0,0,0,0.6)` }}
+      onClick={stop}
+      onMouseDown={stop}
+      onKeyDown={stop}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+
+const MenuLine = () => <div className="mx-2 my-0.5" style={{ height: 1, background: C.line }} />;
+
+/**
+ * Right-click on a task (card or row): priority in one click, the date without opening the card
+ * (сегодня / завтра / следующая неделя / без срока), a period «с … по …» picked as two days,
+ * «+ подзадача», delete. `extra` = rows of the screen that opened it (the project page adds its
+ * sections). Closes on any choice, a click outside or Esc.
+ */
+export function TaskMenu({ at, t, m, onClose, onAddSub, extra }: { at: { x: number; y: number }; t: Task; m: TasksModel; onClose: () => void; onAddSub?: () => void; extra?: ReactNode }) {
+  /** Period picking: first the start day, then the end day. */
+  const [range, setRange] = useState<null | { start?: string }>(null);
+  const set = (patch: Partial<Task>) => {
+    m.actions.update(t.id, patch);
+    onClose();
+  };
+  const today = todayStr();
+  const tomorrow = addDays(new Date(), 1);
+  const ranged = hasRange(t);
+  if (range)
+    return (
+      <PopMenu at={at} onClose={onClose} width={300} label="Период задачи">
+        <div className="flex items-baseline justify-between gap-2 px-2.5 pt-1.5" style={{ fontSize: 13 }}>
+          <span style={{ color: C.text }}>{range.start ? "По какое число?" : "С какого числа?"}</span>
+          {range.start && <span style={{ color: C.text3 }}>с {dueLabel(range.start)}</span>}
+        </div>
+        <CalendarPanel
+          key={range.start ?? "start"}
+          value={range.start ? "" : t.startDate ?? t.dueDate ?? ""}
+          allowNone={false}
+          weekStartsMonday={m.weekStartsMonday}
+          onPick={(d) => {
+            if (!d) return;
+            if (!range.start) return setRange({ start: d });
+            const [a, b] = d < range.start ? [d, range.start] : [range.start, d];
+            set(a === b ? { dueDate: a, startDate: undefined } : { startDate: a, dueDate: b });
+          }}
+        />
+        <MenuRow onClick={() => setRange(null)}>Назад</MenuRow>
+      </PopMenu>
+    );
+  return (
+    <PopMenu at={at} onClose={onClose} label="Действия с задачей">
+      <div className="grid grid-cols-4 gap-1 p-1">
+        {([1, 2, 3, 0] as Priority[]).map((p) => {
+          const on = t.priority === p;
+          return (
+            <button
+              key={p}
+              type="button"
+              title={`Приоритет: ${PRIO_LABEL[p]}`}
+              onClick={() => set({ priority: p })}
+              className="flex flex-col items-center justify-center gap-1 transition-colors duration-150 hover:bg-[#202025]"
+              style={{ height: 44, borderRadius: 8, fontSize: 11, background: on ? tint : "transparent", color: on ? C.text : C.text2 }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: 9, background: PRIO_DOT[p] }} />
+              {PRIO_SHORT[p]}
+            </button>
+          );
+        })}
+      </div>
+      <MenuLine />
+      {(ranged || t.dueDate !== today) && <MenuRow onClick={() => set({ dueDate: today, startDate: undefined })}>На сегодня</MenuRow>}
+      {(ranged || t.dueDate !== tomorrow) && <MenuRow onClick={() => set({ dueDate: tomorrow, startDate: undefined })}>На завтра</MenuRow>}
+      <MenuRow onClick={() => set({ dueDate: weekStart(1, m.weekStartsMonday), startDate: undefined })} hint={m.weekStartsMonday ? "пн" : "вс"}>
+        На следующую неделю
+      </MenuRow>
+      <MenuRow onClick={() => setRange({})} hint={ranged ? rangeLabel(t.startDate!, t.dueDate!) : undefined}>
+        {ranged ? "Изменить период…" : "Период: с … по …"}
+      </MenuRow>
+      {ranged && <MenuRow onClick={() => set({ startDate: undefined })} hint={`до ${dueLabel(t.dueDate!)}`}>Убрать период</MenuRow>}
+      {t.dueDate && <MenuRow onClick={() => set({ dueDate: undefined, startDate: undefined })}>В бэклог — без срока</MenuRow>}
+      {(onAddSub || extra) && <MenuLine />}
+      {onAddSub && (
+        <MenuRow
+          onClick={() => {
+            onAddSub();
+            onClose();
+          }}
+        >
+          Добавить подзадачу
+        </MenuRow>
+      )}
+      {extra}
+      <MenuLine />
+      <MenuRow
+        danger
+        onClick={() => {
+          m.actions.remove(t);
+          onClose();
+        }}
+      >
+        Удалить
+      </MenuRow>
+    </PopMenu>
+  );
+}
+
+/** Right-click on a subtask (card or project row): make it a task of its own, or delete it. */
+export function SubMenu({ at, t, s, m, onClose }: { at: { x: number; y: number }; t: Task; s: Subtask; m: TasksModel; onClose: () => void }) {
+  return (
+    <PopMenu at={at} onClose={onClose} label="Действия с подзадачей">
+      <MenuRow
+        onClick={() => {
+          m.actions.subToTask(t, s);
+          onClose();
+        }}
+      >
+        Сделать отдельной задачей
+      </MenuRow>
+      <MenuRow
+        danger
+        onClick={() => {
+          m.actions.deleteSub(t.id, s.id);
+          onClose();
+        }}
+      >
+        Удалить подзадачу
+      </MenuRow>
+    </PopMenu>
   );
 }
 
@@ -583,7 +894,10 @@ function TaskForm({
   onSaved,
   surface = "panel",
   autoFocus = true,
+  saveRef,
 }: {
+  /** Filled with «save what changed» — the dialog calls it when it closes by Esc, × or a click outside. */
+  saveRef?: MutableRefObject<(() => void) | null>;
   taskId?: string;
   draft?: TaskDraft;
   m: TasksModel;
@@ -598,41 +912,60 @@ function TaskForm({
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [due, setDue] = useState(task ? task.dueDate ?? "" : draft?.dueDate ?? "");
+  const [start, setStart] = useState(task?.startDate ?? "");
   const [priority, setPriority] = useState<Priority>(task ? task.priority : draft?.priority ?? 0);
   const [projectId, setProjectId] = useState(task ? task.projectId ?? "" : draft?.projectId ?? "");
   const [estimate, setEstimate] = useState(task?.estimateMin ? String(task.estimateMin) : "");
   const [tags, setTags] = useState<string[]>(task?.tags ?? []);
+  const [section, setSection] = useState(task?.section ?? "");
   const [sub, setSub] = useState("");
   /** Subtasks typed while creating — handed to addTask together with the task. */
   const [newSubs, setNewSubs] = useState<string[]>([]);
   if (!creating && !task) return null;
+  const sections = m.projects.find((pr) => pr.id === projectId)?.sections ?? [];
+  const sectionOk = sections.includes(section);
   const field: CSSProperties = surface === "card" ? { ...fieldStyle, background: C.raise, boxShadow: "none" } : fieldStyle;
   const dirty =
     !task ||
     title.trim() !== task.title ||
     (description.trim() || "") !== (task.description ?? "") ||
     due !== (task.dueDate ?? "") ||
+    (start && due && start < due ? start : "") !== (task.startDate && task.dueDate && task.startDate < task.dueDate ? task.startDate : "") ||
     priority !== task.priority ||
     projectId !== (task.projectId ?? "") ||
     estimate !== (task.estimateMin ? String(task.estimateMin) : "") ||
-    tags.join("|") !== task.tags.join("|");
-  const save = () => {
-    if (!title.trim()) return;
+    tags.join("|") !== task.tags.join("|") ||
+    (sectionOk ? section : "") !== (task.section ?? "");
+  const collect = () => {
     const est = Math.max(0, Math.round(Number(estimate)));
-    const fields = {
+    return {
       title: title.trim(),
       description: description.trim() || undefined,
       dueDate: due || undefined,
+      startDate: start && due && start < due ? start : undefined,
       priority,
       projectId: projectId || undefined,
+      section: sectionOk && section ? section : undefined,
       estimateMin: est || undefined,
       tags,
     };
-    if (task) m.actions.update(task.id, fields);
-    else m.actions.create({ ...fields, subtaskTitles: newSubs });
+  };
+  const save = () => {
+    if (!title.trim()) return;
+    const { section: sec, ...fields } = collect();
+    if (task) m.actions.update(task.id, { ...fields, section: sec });
+    else {
+      const id = m.actions.create({ ...fields, subtaskTitles: newSubs });
+      if (id && sec) m.actions.update(id, { section: sec });
+    }
     onSaved?.();
     onClose?.();
   };
+  // Closing an open task never drops what was typed: Esc, × and a click outside save the changes.
+  if (saveRef)
+    saveRef.current = () => {
+      if (task && dirty && title.trim()) m.actions.update(task.id, collect());
+    };
   const subs = task ? task.subtasks : newSubs.map((s, i) => ({ id: String(i), title: s, done: false }));
   const subDone = subs.filter((s) => s.done).length;
   return (
@@ -654,10 +987,17 @@ function TaskForm({
         className="w-full resize-none bg-transparent outline-none placeholder:text-[#5E6068]"
         style={{ ...field, height: "auto", padding: "12px 14px", lineHeight: 1.45 }}
       />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="flex min-w-0 flex-col">
+          <label htmlFor="task-form-start" style={labelStyle} title="С какого числа задача идёт — вместе со сроком это период">
+            Начало
+          </label>
+          <DatePicker id="task-form-start" value={start} onChange={setStart} weekStartsMonday={m.weekStartsMonday} surface={surface} />
+          {start && due && start >= due && <span style={{ ...T.foot, color: TONE.amber.fg, marginTop: 4 }}>Позже срока — не сохранится</span>}
+        </div>
         <div className="flex min-w-0 flex-col">
           <label htmlFor="task-form-due" style={labelStyle}>
-            Срок
+            {start ? "Срок — до" : "Срок"}
           </label>
           <DatePicker id="task-form-due" value={due} onChange={setDue} weekStartsMonday={m.weekStartsMonday} surface={surface} />
         </div>
@@ -717,6 +1057,21 @@ function TaskForm({
           options={[{ value: "", label: "Без проекта" }, ...m.projects.map((pr) => ({ value: pr.id, label: pr.name }))]}
         />
       </div>
+      {sections.length > 0 && (
+        <div className="flex min-w-0 flex-col">
+          <label htmlFor="task-form-section" style={labelStyle}>
+            Секция проекта
+          </label>
+          <Select
+            id="task-form-section"
+            ariaLabel="Секция проекта"
+            value={sectionOk ? section : ""}
+            onChange={setSection}
+            surface={surface}
+            options={[{ value: "", label: "Без секции" }, ...sections.map((x) => ({ value: x, label: x }))]}
+          />
+        </div>
+      )}
       <div className="flex min-w-0 flex-col">
         <label htmlFor="task-form-tags" style={labelStyle}>
           Теги
@@ -734,35 +1089,35 @@ function TaskForm({
           )}
         </div>
         <div className="flex flex-col" style={{ borderRadius: 12, background: surface === "card" ? C.raise : C.card, overflow: "hidden" }}>
-          {subs.map((s, i) => (
-            <div key={s.id} className="group flex items-center gap-3 pl-3.5 pr-1.5" style={{ minHeight: 44, ...dashed }}>
-              {task ? (
-                <RoundCheckBtn size={18} done={s.done} onChange={() => m.actions.toggleSub(task.id, s.id)} />
-              ) : (
+          {subs.map((s, i) =>
+            task ? (
+              <SubEditRow key={s.id} task={task} s={s} first={i === 0} last={i === subs.length - 1} m={m} />
+            ) : (
+              <div key={s.id} className="group flex items-center gap-3 pl-3.5 pr-1.5" style={{ minHeight: 44, ...dashed }}>
                 <span className="shrink-0" style={{ width: 18, height: 18, borderRadius: 999, boxShadow: `inset 0 0 0 1.5px ${C.line2}` }} />
-              )}
-              <span className="min-w-0 flex-1 truncate" style={{ ...T.body, color: s.done ? C.text3 : C.text, textDecorationLine: s.done ? "line-through" : "none" }}>
-                {s.title}
-              </span>
-              <button
-                type="button"
-                aria-label="Удалить подзадачу"
-                onClick={() => (task ? m.actions.deleteSub(task.id, s.id) : setNewSubs((xs) => xs.filter((_, j) => j !== i)))}
-                className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-opacity hover:text-[#FF6B63] focus-visible:opacity-100 group-hover:opacity-100"
-                style={{ color: C.text3 }}
-              >
-                <X size={14} strokeWidth={1.75} />
-              </button>
-            </div>
-          ))}
+                <span className="min-w-0 flex-1 truncate" style={{ ...T.body, color: C.text }}>
+                  {s.title}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Удалить подзадачу"
+                  onClick={() => setNewSubs((xs) => xs.filter((_, j) => j !== i))}
+                  className="grid h-8 w-8 place-items-center rounded-full opacity-0 transition-opacity hover:text-[#FF6B63] focus-visible:opacity-100 group-hover:opacity-100"
+                  style={{ color: C.text3 }}
+                >
+                  <X size={14} strokeWidth={1.75} />
+                </button>
+              </div>
+            )
+          )}
           <form
             className="flex items-center gap-3 pl-3.5 pr-1.5"
             style={{ minHeight: 44 }}
             onSubmit={(e) => {
               e.preventDefault();
               if (!sub.trim()) return;
-              if (task) m.actions.addSub(task.id, sub.trim());
-              else setNewSubs((xs) => [...xs, sub.trim()]);
+              if (task) m.actions.addSubs(task.id, sub);
+              else setNewSubs((xs) => [...xs, ...splitLines(sub)]);
               setSub("");
             }}
           >
@@ -770,7 +1125,14 @@ function TaskForm({
             <input
               value={sub}
               onChange={(e) => setSub(e.target.value)}
-              placeholder="Добавить подзадачу"
+              onPaste={(e) => {
+                const text = e.clipboardData.getData("text");
+                if (!/\n/.test(text.trim())) return;
+                e.preventDefault();
+                if (task) m.actions.addSubs(task.id, text);
+                else setNewSubs((xs) => [...xs, ...splitLines(text)]);
+              }}
+              placeholder="Добавить подзадачу — можно вставить список строк"
               className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[#5E6068]"
               style={{ fontSize: 14, color: C.text }}
             />
@@ -808,22 +1170,110 @@ function TaskForm({
 }
 
 /**
+ * A subtask inside the open task: tick, priority dot (click = next priority), the title edited in
+ * place, own date, ↑ ↓ order, «сделать задачей», delete. Everything applies at once.
+ */
+function SubEditRow({ task, s, first, last, m }: { task: Task; s: Subtask; first: boolean; last: boolean; m: TasksModel }) {
+  const [v, setV] = useState(s.title);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  useEffect(() => setV(s.title), [s.title]);
+  const p = s.priority ?? 0;
+  const commit = () => {
+    const x = v.trim();
+    if (!x) setV(s.title);
+    else if (x !== s.title) m.actions.updateSub(task.id, s.id, { title: x });
+  };
+  const late = !s.done && isOverdue(s.dueDate);
+  const icon = "grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors hover:bg-[#202025] hover:text-[#F4F5F7] disabled:opacity-30";
+  return (
+    <div className="group flex items-center gap-2 pl-3.5 pr-1.5" style={{ minHeight: 44, ...dashed }}>
+      <RoundCheckBtn size={18} done={s.done} onChange={() => m.actions.toggleSub(task.id, s.id)} />
+      <button
+        type="button"
+        title={`Приоритет: ${PRIO_LABEL[p]} — клик меняет`}
+        aria-label={`Приоритет подзадачи: ${PRIO_LABEL[p]}`}
+        onClick={() => m.actions.updateSub(task.id, s.id, { priority: ((p + 1) % 4) as Priority })}
+        className="grid h-6 w-5 shrink-0 place-items-center"
+      >
+        <span style={{ width: 7, height: 7, borderRadius: 9, background: PRIO_DOT[p] }} />
+      </button>
+      <input
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            setV(s.title);
+          }
+        }}
+        aria-label="Название подзадачи"
+        className="min-w-0 flex-1 bg-transparent outline-none"
+        style={{ fontSize: 14, color: s.done ? C.text3 : C.text, textDecorationLine: s.done ? "line-through" : "none" }}
+      />
+      <button
+        type="button"
+        title={s.dueDate ? "Изменить срок подзадачи" : "Срок подзадачи"}
+        onClick={(e) => {
+          const el = e.currentTarget;
+          setAnchor((a) => (a ? null : el));
+        }}
+        className={`inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-opacity hover:brightness-125 ${s.dueDate || anchor ? "" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"}`}
+        style={{ ...metaChip, padding: s.dueDate ? "0 8px" : 0, width: s.dueDate ? undefined : 26, background: late ? TONE.amber.bg : s.dueDate ? C.line2 : "transparent", color: late ? TONE.amber.fg : C.text2 }}
+      >
+        {s.dueDate ? dueLabel(s.dueDate) : <CalendarDays size={14} strokeWidth={1.75} />}
+      </button>
+      <span className="flex shrink-0 items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100" style={{ color: C.text3 }}>
+        <button type="button" title="Выше" aria-label="Выше" disabled={first} onClick={() => m.actions.moveSub(task, s.id, -1)} className={icon}>
+          <ArrowUp size={14} strokeWidth={1.75} />
+        </button>
+        <button type="button" title="Ниже" aria-label="Ниже" disabled={last} onClick={() => m.actions.moveSub(task, s.id, 1)} className={icon}>
+          <ArrowDown size={14} strokeWidth={1.75} />
+        </button>
+        <button
+          type="button"
+          title="Вынести в отдельную задачу (проект, срок и приоритет сохранятся)"
+          onClick={() => m.actions.subToTask(task, s)}
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 transition-colors hover:bg-[#202025] hover:text-[#F4F5F7]"
+          style={{ fontSize: 12 }}
+        >
+          <CornerUpRight size={13} strokeWidth={1.75} />в задачу
+        </button>
+        <button type="button" title="Удалить подзадачу" aria-label="Удалить подзадачу" onClick={() => m.actions.deleteSub(task.id, s.id)} className={`${icon} hover:!text-[#FF6B63]`}>
+          <X size={14} strokeWidth={1.75} />
+        </button>
+      </span>
+      {anchor && <DatePop anchor={anchor} value={s.dueDate} weekStartsMonday={m.weekStartsMonday} onPick={(d) => m.actions.updateSub(task.id, s.id, { dueDate: d })} onClose={() => setAnchor(null)} />}
+    </div>
+  );
+}
+
+/**
  * Dialog around TaskForm — the main screen's TaskEditor shell (panel 24, blurred backdrop, Esc).
  * `taskId` edits a task; `taskId={null}` creates one from `draft`.
  */
 export function TaskEditor({ taskId, draft, m, onClose }: { taskId: string | null; draft?: TaskDraft; m: TasksModel; onClose: () => void }) {
   const exists = taskId === null || m.tasks.some((t) => t.id === taskId);
+  const saveRef = useRef<(() => void) | null>(null);
+  /** Esc, × and a click outside keep the changes of an open task («Отмена» is the way to drop them). */
+  const close = () => {
+    saveRef.current?.();
+    onClose();
+  };
+  const closeRef = useRef(close);
+  closeRef.current = close;
   useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const key = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
-  }, [onClose]);
+  }, []);
   useEffect(() => {
     if (!exists) onClose();
   }, [exists, onClose]);
   if (!exists) return null;
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto p-6" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)" }} onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto p-6" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)" }} onMouseDown={close}>
       <div
         role="dialog"
         data-lab-block="editor"
@@ -834,11 +1284,11 @@ export function TaskEditor({ taskId, draft, m, onClose }: { taskId: string | nul
       >
         <div className="flex items-center justify-between">
           <span style={T.h2}>{taskId ? "Задача" : "Новая задача"}</span>
-          <IconBtn title="Закрыть" onClick={onClose}>
+          <IconBtn title={taskId ? "Сохранить и закрыть" : "Закрыть"} onClick={close}>
             <X {...ICON} />
           </IconBtn>
         </div>
-        <TaskForm key={taskId ?? "new"} taskId={taskId ?? undefined} draft={draft} m={m} onClose={onClose} />
+        <TaskForm key={taskId ?? "new"} taskId={taskId ?? undefined} draft={draft} m={m} onClose={onClose} saveRef={saveRef} />
       </div>
     </div>
   );

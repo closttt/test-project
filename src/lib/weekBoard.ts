@@ -81,3 +81,26 @@ export function weekColumnOf(task: Task, days: WeekDay[], today = localDayStr())
   if (todayCol && task.dueDate < days[0].date) return todayCol.date;
   return null;
 }
+
+/** The task runs over a period: a start before its due date. */
+export function hasRange(t: Pick<Task, "startDate" | "dueDate">): boolean {
+  return !!t.startDate && !!t.dueDate && t.startDate < t.dueDate;
+}
+
+/** «1–5 нояб.», or «28 окт.–3 нояб.» across months. */
+export function rangeLabel(start: string, end: string): string {
+  const a = fromDayStr(start);
+  const b = fromDayStr(end);
+  const tail = `${b.getDate()} ${MONTHS[b.getMonth()]}`;
+  return a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear() ? `${a.getDate()}–${tail}` : `${a.getDate()} ${MONTHS[a.getMonth()]}–${tail}`;
+}
+
+/**
+ * Whether a task stands in the column of `date`. A running period (not yet past its end) fills
+ * every day from start to end; everything else — single dates, overdue periods — follows
+ * weekColumnOf (overdue collects in today's column).
+ */
+export function onDay(task: Task, date: string, days: WeekDay[], today = localDayStr()): boolean {
+  if (hasRange(task) && task.dueDate! >= today) return task.startDate! <= date && date <= task.dueDate!;
+  return weekColumnOf(task, days, today) === date;
+}

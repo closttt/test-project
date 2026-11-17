@@ -196,6 +196,9 @@ export interface Task {
   links: string[];
   comments: TaskComment[];
   dueDate?: string;
+  /** Start of a period (YYYY-MM-DD): with `dueDate` after it the task runs «с 1-го по 5-е» and stands
+   * on every day of the period on the week board. Ignored unless it is before `dueDate`. */
+  startDate?: string;
   /** Local reminder datetime (YYYY-MM-DDTHH:mm); fires an in-app + browser notification. */
   remindAt?: string;
   /** Hidden from active lists until this date (YYYY-MM-DD). */
